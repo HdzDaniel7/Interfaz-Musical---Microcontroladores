@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Editor Musical ESP32</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<h2 class="sr-only">Editor de partituras ESP32</h2>
+
+<div id="app">
+
+  <!-- ════════════ TOOLBAR 1: herramientas musicales ════════════ -->
+  <div id="toolbar1">
+
+    <!-- Escala base -->
+    <span class="tb-label">z2</span>
+    <input class="sel-input" type="number" id="z2-val"
+           value="5" min="0" max="9" style="width:44px"
+           title="Escala base z2 del firmware">
+
+    <div class="tb-sep"></div>
+
+    <!-- Duraciones de nota -->
+    <span class="tb-label">Nota</span>
+    <button class="tool-btn" data-dur="TT" title="Redonda">
+      <span class="sym">𝅝</span><span class="lbl">Redonda</span>
+    </button>
+    <button class="tool-btn" data-dur="DT" title="Blanca">
+      <span class="sym">𝅗𝅥</span><span class="lbl">Blanca</span>
+    </button>
+    <button class="tool-btn active" data-dur="T" title="Negra">
+      <span class="sym">♩</span><span class="lbl">Negra</span>
+    </button>
+    <button class="tool-btn" data-dur="MT" title="Corchea">
+      <span class="sym">♪</span><span class="lbl">Corchea</span>
+    </button>
+    <button class="tool-btn" data-dur="CT" title="Semicorchea">
+      <span class="sym">𝅘𝅥𝅯</span><span class="lbl">Semicroc.</span>
+    </button>
+
+    <div class="tb-sep"></div>
+
+    <!-- Silencios -->
+    <span class="tb-label">Silencio</span>
+    <button class="tool-btn" data-dur="TT" data-rest="1" title="Silencio redonda">
+      <span class="sym">𝄻</span><span class="lbl">Red.</span>
+    </button>
+    <button class="tool-btn" data-dur="DT" data-rest="1" title="Silencio blanca">
+      <span class="sym">𝄼</span><span class="lbl">Bla.</span>
+    </button>
+    <button class="tool-btn" data-dur="T" data-rest="1" title="Silencio negra">
+      <span class="sym">𝄽</span><span class="lbl">Neg.</span>
+    </button>
+    <button class="tool-btn" data-dur="MT" data-rest="1" title="Silencio corchea">
+      <span class="sym">𝄾</span><span class="lbl">Cor.</span>
+    </button>
+
+    <div class="tb-sep"></div>
+
+    <!-- Accidentales -->
+    <span class="tb-label">Accidental</span>
+    <button class="acc-btn" id="acc-none"  title="Natural">♮</button>
+    <button class="acc-btn" id="acc-sharp" title="Sostenido">♯</button>
+    <button class="acc-btn" id="acc-flat"  title="Bemol">♭</button>
+
+  </div><!-- /#toolbar1 -->
+
+  <!-- ════════════ TOOLBAR 2: acciones ════════════ -->
+  <div id="toolbar2">
+
+    <!-- Edición -->
+    <button class="icon-btn" id="btn-delete" title="Borrar nota (Supr)">
+      <svg viewBox="0 0 24 24"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg>
+    </button>
+    <button class="icon-btn" id="btn-undo" title="Deshacer (Ctrl+Z)">
+      <svg viewBox="0 0 24 24">
+        <path d="M9 14 4 9l5-5"/>
+        <path d="M4 9h10a4 4 0 0 1 0 8h-1"/>
+      </svg>
+    </button>
+    <button class="icon-btn" id="btn-redo" title="Rehacer (Ctrl+Y)">
+      <svg viewBox="0 0 24 24">
+        <path d="M15 14l5-5-5-5"/>
+        <path d="M20 9H10a4 4 0 0 0 0 8h1"/>
+      </svg>
+    </button>
+
+    <div class="tb-sep"></div>
+
+    <!-- Reproducción -->
+    <button class="icon-btn" id="btn-play" title="Reproducir">
+      <svg viewBox="0 0 24 24"><polygon points="5,3 19,12 5,21"/></svg>
+    </button>
+    <button class="icon-btn" id="btn-stop" title="Detener">
+      <svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2"/></svg>
+    </button>
+
+    <div class="tb-sep"></div>
+
+    <!-- Archivos -->
+    <button class="icon-btn" id="btn-save" title="Guardar proyecto (.json)">
+      <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12l7 7 7-7"/></svg>
+    </button>
+    <button class="icon-btn" id="btn-load" title="Cargar proyecto (.json)">
+      <svg viewBox="0 0 24 24"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
+    </button>
+    <button class="icon-btn" id="btn-export" title="Exportar código (.ino)">
+      <svg viewBox="0 0 24 24">
+        <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V9z"/>
+        <polyline points="14,3 14,9 20,9"/>
+        <line x1="9" y1="17" x2="15" y2="17"/>
+      </svg>
+    </button>
+    <!-- Input oculto para carga de archivo -->
+    <input type="file" id="file-input" accept=".json" style="display:none">
+
+    <div class="tb-sep"></div>
+
+    <!-- Paginación -->
+    <button class="icon-btn" id="btn-prev-page" title="Página anterior">
+      <svg viewBox="0 0 24 24"><polyline points="15,18 9,12 15,6"/></svg>
+    </button>
+    <span id="page-ind">Pág 1/1</span>
+    <button class="icon-btn" id="btn-next-page" title="Página siguiente">
+      <svg viewBox="0 0 24 24"><polyline points="9,18 15,12 9,6"/></svg>
+    </button>
+
+    <div style="margin-left:auto">
+      <button class="btn-small btn-danger" id="btn-clear">Limpiar</button>
+    </div>
+
+  </div><!-- /#toolbar2 -->
+
+  <!-- ════════════ ÁREA PRINCIPAL ════════════ -->
+  <div id="main-area">
+
+    <!-- Pentagrama -->
+    <div id="score-container">
+      <canvas id="score-canvas"></canvas>
+    </div>
+
+    <!-- Panel lateral -->
+    <div id="side-panel">
+
+      <div id="side-tabs">
+        <div class="side-tab active" data-tab="code">Código</div>
+        <div class="side-tab"        data-tab="props">Propiedades</div>
+      </div>
+
+      <div id="side-content">
+
+        <!-- Tab: Código generado -->
+        <div class="tab-panel active" id="tab-code">
+          <pre id="code-output" tabindex="0"></pre>
+        </div>
+
+        <!-- Tab: Propiedades del proyecto -->
+        <div class="tab-panel" id="tab-props">
+          <div class="prop-row">
+            <label>Compás</label>
+            <select><option>4/4</option></select>
+          </div>
+          <div class="prop-row">
+            <label>Escala z2</label>
+            <input type="number" id="z2-prop" value="5" min="0" max="9">
+          </div>
+          <div class="prop-row">
+            <label>Título</label>
+            <input type="text" id="title-prop" value="Mi_Cancion" style="width:120px">
+          </div>
+          <div class="prop-row">
+            <label>Tempo (BPM)</label>
+            <input type="number" id="bpm-prop" value="120" min="40" max="300">
+          </div>
+
+          <!-- Referencia de equivalencias -->
+          <div style="padding:10px;font-size:11px;color:var(--color-text-secondary)">
+            <div style="margin-bottom:5px;font-weight:500;color:var(--color-text-primary)">
+              Equivalencias
+            </div>
+            DO♯=RE♭ &nbsp; RE♯=MI♭ &nbsp; FA♯=SOL♭<br>
+            SOL♯=LA♭ &nbsp; LA♯=SI♭
+            <div style="margin-top:6px">El código siempre genera sostenidos.</div>
+          </div>
+
+          <!-- Referencia de duraciones -->
+          <div style="padding:8px 10px;border-top:0.5px solid var(--color-border-tertiary)">
+            <div style="font-size:11px;color:var(--color-text-secondary);margin-bottom:4px">
+              Duraciones
+            </div>
+            <div style="font-size:10px;color:var(--color-text-secondary);line-height:1.9">
+              TT = Redonda (E×160)<br>
+              DT = Blanca  (E×80)<br>
+              T  = Negra   (E×40)<br>
+              MT = Corchea (E×20)<br>
+              CT = Semicorchea (E×10)
+            </div>
+          </div>
+        </div><!-- /#tab-props -->
+
+      </div><!-- /#side-content -->
+    </div><!-- /#side-panel -->
+
+  </div><!-- /#main-area -->
+
+  <!-- ════════════ BARRA DE ESTADO ════════════ -->
+  <div id="statusbar">
+    <span id="status-note">Sin selección</span>
+    <span>|</span>
+    <span id="status-count">0 notas</span>
+    <span>|</span>
+    <span id="status-dur">0 compases</span>
+  </div>
+
+</div><!-- /#app -->
+
+<!-- ════════════ SCRIPTS (orden de dependencias) ════════════
+     1. constants  — datos musicales globales (sin dependencias)
+     2. state      — estado de la app (usa constantes)
+     3. music      — lógica musical (usa constantes + state)
+     4. renderer   — dibujo en canvas (usa music + state)
+     5. audio      — reproducción (usa music + state)
+     6. ui         — eventos DOM (usa todo lo anterior)
+-->
+<script src="js/constants.js"></script>
+<script src="js/state.js"></script>
+<script src="js/music.js"></script>
+<script src="js/renderer.js"></script>
+<script src="js/audio.js"></script>
+<script src="js/ui.js"></script>
+
+<!-- Arranque -->
+<script>
+  render();
+</script>
+
+</body>
+</html>

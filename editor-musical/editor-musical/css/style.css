@@ -1,0 +1,286 @@
+/* ============================================================
+   Editor Musical ESP32 — Estilos
+   ============================================================ */
+
+/* ── Reset ──────────────────────────────────────────────────── */
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+/* ── Raíz de la app ─────────────────────────────────────────── */
+body {
+  font-family: var(--font-sans);
+  color: var(--color-text-primary);
+  background: transparent;
+}
+
+#app {
+  display: grid;
+  grid-template-rows: auto auto 1fr auto;
+  height: 720px;
+  gap: 0;
+}
+
+/* ── Toolbars ────────────────────────────────────────────────── */
+#toolbar1 {
+  background: var(--color-background-secondary);
+  border-bottom: 0.5px solid var(--color-border-tertiary);
+  padding: 10px;
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  flex-wrap: nowrap;
+}
+
+#toolbar2 {
+  background: var(--color-background-secondary);
+  border-bottom: 0.5px solid var(--color-border-tertiary);
+  padding: 4px 10px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: nowrap;
+}
+
+.tb-sep {
+  width: 0.5px;
+  height: 26px;
+  background: var(--color-border-tertiary);
+  flex-shrink: 0;
+  margin: 0 2px;
+}
+
+.tb-label {
+  font-size: 14px;
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* ── Botones de herramienta (nota / silencio) ────────────────── */
+.tool-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 33px;
+  height: 36px;
+  border: 0.5px solid var(--color-border-tertiary);
+  border-radius: 5px;
+  background: var(--color-background-primary);
+  cursor: pointer;
+  color: var(--color-text-secondary);
+  gap: 1px;
+  transition: all 0.15s;
+  flex-shrink: 0;
+}
+
+.tool-btn:hover  { border-color: #4A90D9; color: #4A90D9; }
+.tool-btn.active { background: #4A90D9; border-color: #4A90D9; color: #fff; }
+
+.tool-btn .sym { font-size: 16px; line-height: 1.1; }
+.tool-btn .lbl { font-size: 9px;  line-height: 1; }
+
+/* ── Botones de icono (acciones) ─────────────────────────────── */
+.icon-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 0.5px solid var(--color-border-tertiary);
+  border-radius: 5px;
+  background: var(--color-background-primary);
+  cursor: pointer;
+  color: var(--color-text-secondary);
+  transition: all 0.15s;
+  flex-shrink: 0;
+}
+
+.icon-btn:hover { border-color: #4A90D9; color: #4A90D9; }
+
+.icon-btn svg {
+  width: 13px;
+  height: 13px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* ── Input numérico toolbar ──────────────────────────────────── */
+.sel-input {
+  height: 28px;
+  border: 0.5px solid var(--color-border-tertiary);
+  border-radius: 5px;
+  background: var(--color-background-primary);
+  color: var(--color-text-primary);
+  padding: 0 5px;
+  font-size: 15px;
+}
+
+/* ── Botones de accidental ───────────────────────────────────── */
+.acc-btn {
+  width: 24px;
+  height: 24px;
+  border: 0.5px solid var(--color-border-tertiary);
+  border-radius: 4px;
+  background: var(--color-background-primary);
+  cursor: pointer;
+  font-size: 16px;
+  color: var(--color-text-secondary);
+  flex-shrink: 0;
+  transition: all 0.15s;
+  line-height: 24px;
+  text-align: center;
+}
+
+.acc-btn:hover  { border-color: #4A90D9; color: #4A90D9; }
+.acc-btn.active { background: #4A90D9; color: #fff; border-color: #4A90D9; }
+
+/* ── Área principal ──────────────────────────────────────────── */
+#main-area {
+  display: grid;
+  grid-template-columns: 1fr 265px;
+  overflow: hidden;
+  min-height: 0;
+}
+
+/* ── Pentagrama / canvas ─────────────────────────────────────── */
+#score-container {
+  overflow: auto;
+  background: var(--color-background-secondary);
+}
+
+#score-canvas {
+  background: #fff;
+  display: block;
+  cursor: crosshair;
+  margin: 10px auto;
+}
+
+/* ── Panel lateral ───────────────────────────────────────────── */
+#side-panel {
+  border-left: 0.5px solid var(--color-border-tertiary);
+  display: flex;
+  flex-direction: column;
+  background: var(--color-background-primary);
+  min-height: 0;
+}
+
+#side-tabs {
+  display: flex;
+  border-bottom: 0.5px solid var(--color-border-tertiary);
+  flex-shrink: 0;
+}
+
+.side-tab {
+  flex: 1;
+  padding: 6px;
+  font-size: 12px;
+  text-align: center;
+  cursor: pointer;
+  color: var(--color-text-secondary);
+  border-bottom: 2px solid transparent;
+}
+
+.side-tab.active { color: #4A90D9; border-bottom-color: #4A90D9; }
+
+#side-content {
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.tab-panel {
+  display: none;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.tab-panel.active { display: flex; }
+
+/* ── Salida de código ────────────────────────────────────────── */
+#code-output {
+  flex: 1;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 1.5;
+  padding: 10px;
+  background: var(--color-background-secondary);
+  color: var(--color-text-primary);
+  border: none;
+  resize: none;
+  width: 100%;
+  overflow-y: scroll;
+  overflow-x: auto;
+  white-space: pre;
+  user-select: text;
+  cursor: text;
+  min-height: 0;
+}
+
+/* ── Barra de estado ─────────────────────────────────────────── */
+#statusbar {
+  background: var(--color-background-secondary);
+  border-top: 0.5px solid var(--color-border-tertiary);
+  padding: 4px 10px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 11px;
+  color: var(--color-text-secondary);
+  flex-shrink: 0;
+}
+
+/* ── Botón pequeño ───────────────────────────────────────────── */
+.btn-small {
+  height: 22px;
+  padding: 0 8px;
+  border: 0.5px solid var(--color-border-tertiary);
+  border-radius: 4px;
+  background: var(--color-background-primary);
+  color: var(--color-text-primary);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.btn-danger { background: #E85D4A; color: #fff; border-color: #E85D4A; }
+
+/* ── Panel de propiedades ────────────────────────────────────── */
+.prop-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px;
+  border-bottom: 0.5px solid var(--color-border-tertiary);
+  font-size: 12px;
+}
+
+.prop-row label { color: var(--color-text-secondary); }
+
+.prop-row input,
+.prop-row select {
+  width: 88px;
+  height: 24px;
+  border: 0.5px solid var(--color-border-tertiary);
+  border-radius: 4px;
+  background: var(--color-background-primary);
+  color: var(--color-text-primary);
+  padding: 0 5px;
+  font-size: 12px;
+}
+
+/* ── Indicador de página ─────────────────────────────────────── */
+#page-ind {
+  font-size: 11px;
+  min-width: 52px;
+  text-align: center;
+  color: var(--color-text-secondary);
+}
