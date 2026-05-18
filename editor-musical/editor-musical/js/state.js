@@ -1,36 +1,126 @@
 /* ============================================================
    state.js — Estado global de la aplicación
-   ============================================================
-   Toda la mutación del estado pasa por este módulo.
-   El resto de módulos importan `state` y llaman a sus helpers.
    ============================================================ */
 
 const state = {
-  // ── Partitura ─────────────────────────────────────────────
-  notes: [],          // Array de objetos nota
-
-  // ── Paginación ───────────────────────────────────────────
-  pages: 1,
-  currentPage: 0,
-
-  // ── Configuración del proyecto ────────────────────────────
-  z2: 5,              // Escala base (int8_t z2 en el .ino)
-  title: 'Mi_Cancion',
-  bpm: 120,
-
-  // ── UI: selección y arrastre ──────────────────────────────
-  selectedNote: -1,
-
-  // ── Historial para Deshacer / Rehacer ─────────────────────
-  history: [],
-  redoStack: [],
-
-  // ── Herramienta activa ────────────────────────────────────
-  activeTool: { dur: 'T', rest: false },
-
-  // ── Accidental activo ─────────────────────────────────────
-  activeAccidental: 'none',   // 'none' | 'sharp' | 'flat'
+  notes:         [],
+  pages:         1,
+  currentPage:   0,
+  z2:            5,
+  title:         'Mi_Cancion',
+  bpm:           120,
+  mcu:           'esp32',
+  timeSignature: { num: 4, den: 4 },
+  selectedNote:  -1,
+  history:       [],
+  redoStack:     [],
+  activeTool:    { dur: 'T', rest: false, dotted: false },
+  activeAccidental: 'none',
 };
+
+// ══════════════════════════════════════════════════════════════
+// LÓGICA DE COMPÁS
+// ══════════════════════════════════════════════════════════════
+
+// Devuelve cuántos beats de negra caben en un compás.
+//   4/4 → 4   3/4 → 3   2/4 → 2   6/8 → 3 (6 corcheas = 3 negras)
+function beatsPerMeasure() {
+  const { num, den } = state.timeSignature;
+  return num / (den / 4);
+}
+
+// Duración en beats de negra de una nota
+function noteDurationBeats(note) {
+  const base = DUR_BEATS[note.dur] || 1;
+  return note.dotted ? base * 1.5 : base;
+}
+
+// ── Analiza las notas y devuelve grupos por compás ─────────────
+function analyzeMeasures() {
+  const capacity = beatsPerMeasure();
+  const measures = [];
+  let i = 0, startIdx = 0, beats = 0;
+
+  while (i <= state.notes.length) {
+    // Fin del array → cerrar compás incompleto
+    if (i === state.notes.length) {
+      if (i > startIdx || beats > 0) {
+        measures.push({
+          startIdx, endIdx: i, beats, capacity,
+          overflow:  beats > capacity + 0.001,
+          underflow: beats < capacity - 0.001,
+        });
+      }
+      break;
+    }
+
+    const nb = noteDurationBeats(state.notes[i]);
+
+    // La nota desborda → cerrar compás anterior primero
+    if (beats + nb > capacity + 0.001) {
+      if (i > startIdx || beats > 0) {
+        measures.push({
+          startIdx, endIdx: i, beats, capacity,
+          overflow:  false,
+          underflow: beats < capacity - 0.001,
+        });
+        startIdx = i;
+        beats    = 0;
+      }
+    }
+
+    beats += nb;
+
+    // Compás exactamente lleno → cerrarlo
+    if (Math.abs(beats - capacity) < 0.001) {
+      measures.push({
+        startIdx, endIdx: i + 1, beats, capacity,
+        overflow: false, underflow: false,
+      });
+      startIdx = i + 1;
+      beats    = 0;
+    }
+
+    i++;
+  }
+
+  return measures;
+}
+
+// ── Beats usados en el compás actualmente abierto ─────────────
+function usedBeatsInOpenMeasure() {
+  const capacity = beatsPerMeasure();
+  let beats = 0;
+  for (let i = state.notes.length - 1; i >= 0; i--) {
+    beats += noteDurationBeats(state.notes[i]);
+    if (Math.abs(beats - capacity) < 0.001) return 0; // límite de compás anterior
+    if (beats > capacity + 0.001) return beats - capacity; // datos externos inválidos
+  }
+  return beats;
+}
+
+// ── ¿Cabe la nota en el compás actualmente abierto? ─────────
+// Modo ESTRICTO: bloquea si la nota no cabe.
+function fitsInCurrentMeasure(dur, dotted) {
+  const capacity  = beatsPerMeasure();
+  const used      = usedBeatsInOpenMeasure();
+  const newBeats  = (DUR_BEATS[dur] || 1) * (dotted ? 1.5 : 1);
+  return newBeats <= capacity - used + 0.001;
+}
+
+// ── Duraciones disponibles para el compás actual ─────────────
+// Devuelve un objeto { TT: bool, DT: bool, T: bool, ... , TT_dot: bool, ... }
+function availableDurations() {
+  const capacity  = beatsPerMeasure();
+  const used      = usedBeatsInOpenMeasure();
+  const remaining = capacity - used;
+  const result    = {};
+  for (const [dur, beats] of Object.entries(DUR_BEATS)) {
+    result[dur]          = beats       <= remaining + 0.001;
+    result[dur + '_dot'] = beats * 1.5 <= remaining + 0.001;
+  }
+  return result;
+}
 
 // ── Historia ──────────────────────────────────────────────────
 function pushHistory() {
@@ -55,7 +145,6 @@ function redo() {
   return true;
 }
 
-// ── Operaciones de nota ───────────────────────────────────────
 function deleteSelected() {
   if (state.selectedNote < 0) return false;
   pushHistory();
@@ -72,23 +161,22 @@ function clearAll() {
   return true;
 }
 
-// ── Serialización (Guardar / Cargar proyecto) ─────────────────
 function exportProject() {
   return JSON.stringify({
-    notes: state.notes,
-    z2:    state.z2,
-    title: state.title,
-    bpm:   state.bpm,
+    notes: state.notes, z2: state.z2, title: state.title,
+    bpm: state.bpm, mcu: state.mcu, timeSignature: state.timeSignature,
   });
 }
 
 function importProject(jsonStr) {
   const d = JSON.parse(jsonStr);
   pushHistory();
-  state.notes        = d.notes || [];
-  state.z2           = d.z2    || 5;
-  state.title        = d.title || 'Mi_Cancion';
-  state.bpm          = d.bpm   || 120;
-  state.currentPage  = 0;
-  state.selectedNote = -1;
+  state.notes         = d.notes || [];
+  state.z2            = d.z2    || 5;
+  state.title         = d.title || 'Mi_Cancion';
+  state.bpm           = d.bpm   || 120;
+  state.mcu           = d.mcu   || 'esp32';
+  state.timeSignature = d.timeSignature || { num: 4, den: 4 };
+  state.currentPage   = 0;
+  state.selectedNote  = -1;
 }

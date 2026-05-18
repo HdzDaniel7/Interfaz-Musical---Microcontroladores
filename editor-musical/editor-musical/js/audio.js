@@ -1,13 +1,10 @@
 /* ============================================================
    audio.js — Reproducción con Web Audio API
-   ============================================================
-   Simula el buzzer PWM del ESP32 usando un oscilador cuadrado.
    ============================================================ */
 
 let isPlaying    = false;
 let playAudioCtx = null;
 
-// ── Inicia reproducción de toda la partitura ──────────────────
 function playScore() {
   if (isPlaying || !state.notes.length) return;
 
@@ -19,21 +16,19 @@ function playScore() {
 
   osc.connect(gain);
   gain.connect(playAudioCtx.destination);
-  osc.type         = 'square';
-  gain.gain.value  = 0.07;
+  osc.type        = 'square';
+  gain.gain.value = 0.07;
   osc.start();
 
   let t = playAudioCtx.currentTime;
 
   state.notes.forEach(n => {
-    // DUR_MS / 500 para que suene al doble de velocidad que real-time
-    // (ajusta a /1000 si quieres duración real)
-    const dur = DUR_MS[n.dur] / 500;
+    const baseDur = DUR_MS[n.dur] / 500;
+    const dur     = n.dotted ? baseDur * 1.5 : baseDur;
 
     if (n.rest) {
       gain.gain.setValueAtTime(0, t);
     } else {
-      // Determinar el nombre del enum y el offset de octava
       let baseName, octaveOff;
       if (n.note.endsWith('M')) {
         baseName  = n.note.slice(0, -1);
@@ -51,7 +46,7 @@ function playScore() {
 
       osc.frequency.setValueAtTime(freq, t);
       gain.gain.setValueAtTime(0.07, t);
-      gain.gain.setValueAtTime(0, t + dur * 0.88);  // pequeño silencio entre notas
+      gain.gain.setValueAtTime(0, t + dur * 0.88);
     }
 
     t += dur;
@@ -61,10 +56,9 @@ function playScore() {
   osc.onended = () => { isPlaying = false; };
 }
 
-// ── Detiene la reproducción inmediatamente ────────────────────
 function stopScore() {
   if (playAudioCtx) {
-    try { playAudioCtx.close(); } catch (e) { /* ignorar */ }
+    try { playAudioCtx.close(); } catch (e) {}
     playAudioCtx = null;
   }
   isPlaying = false;

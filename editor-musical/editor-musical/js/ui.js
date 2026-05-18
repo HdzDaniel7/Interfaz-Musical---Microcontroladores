@@ -1,14 +1,13 @@
 /* ============================================================
    ui.js — Controladores de interfaz de usuario
-   ============================================================
-   Maneja todos los eventos del DOM: toolbar, canvas, teclado,
-   panel lateral, guardado y carga de archivos.
    ============================================================ */
 
 // ── Panel de código ───────────────────────────────────────────
 function updateCodePanel() {
-  document.getElementById('code-output').textContent =
-    generateInoCode(state.notes, state.z2, state.title);
+  const code = generateInoCode(state.notes, state.z2, state.title);
+  document.getElementById('code-output').textContent = code;
+  document.getElementById('code-title').textContent =
+    (state.title || 'sin_titulo').replace(/\s+/g, '_') + '.ino';
 }
 
 // ── Barra de estado inferior ──────────────────────────────────
@@ -17,175 +16,211 @@ function updateStatus() {
   document.getElementById('status-count').textContent =
     `${count} nota${count !== 1 ? 's' : ''}`;
 
-  const beats = state.notes.reduce((a, n) => a + (DUR_BEATS[n.dur] || 1), 0);
+  const measures = analyzeMeasures();
   document.getElementById('status-dur').textContent =
-    `${(beats / 4).toFixed(1)} compases`;
+    `${measures.length} compás${measures.length !== 1 ? 'es' : ''}`;
+
+  const ts = state.timeSignature;
+  document.getElementById('status-timesig').textContent = `Compás: ${ts.num}/${ts.den}`;
+  document.getElementById('status-mcu').textContent     = `MCU: ${(state.mcu || 'esp32').toUpperCase()}`;
 
   if (state.selectedNote >= 0 && state.notes[state.selectedNote]) {
-    const sn = state.notes[state.selectedNote];
-    const acc = sn.accidental === 'sharp' ? '♯'
-      : sn.accidental === 'flat' ? '♭' : '';
+    const sn  = state.notes[state.selectedNote];
+    const acc = sn.accidental === 'sharp' ? '♯' : sn.accidental === 'flat' ? '♭' : '';
+    const dot = sn.dotted ? '.' : '';
     document.getElementById('status-note').textContent =
       sn.rest
-        ? `Silencio ${sn.dur}`
-        : `${NOTE_DISPLAY[sn.note]}${acc} · ${sn.dur}`;
+        ? `Silencio ${sn.dur}${dot}`
+        : `${NOTE_DISPLAY[sn.note]}${acc}${dot} · ${sn.dur}`;
   } else {
     document.getElementById('status-note').textContent = 'Sin selección';
+  }
+
+  document.getElementById('prop-notes').textContent    = count;
+  document.getElementById('prop-measures').textContent = measures.length;
+  document.getElementById('prop-complete').textContent =
+    measures.filter(m => !m.overflow && !m.underflow).length;
+
+  // Actualizar estado visual de los botones de duración
+  updateToolbarAvailability();
+}
+
+// ── Deshabilitar duraciones que no caben en el compás actual ──
+function updateToolbarAvailability() {
+  const avail = availableDurations();
+
+  document.querySelectorAll('.tool-btn[data-dur]').forEach(btn => {
+    const dur    = btn.dataset.dur;
+    const rest   = btn.dataset.rest === '1';
+    const dotted = state.activeTool.dotted;
+
+    if (rest) {
+      // Los silencios también consumen tiempo de compás
+      const key = dotted ? dur + '_dot' : dur;
+      const ok  = avail[key] !== false;
+      btn.disabled = !ok;
+      btn.classList.toggle('unavailable', !ok);
+    } else {
+      const key = dotted ? dur + '_dot' : dur;
+      const ok  = avail[key] !== false;
+      btn.disabled = !ok;
+      btn.classList.toggle('unavailable', !ok);
+    }
+  });
+
+  // El puntillo también puede hacer que la duración actual no quepa
+  const dotBtn = document.getElementById('dot-btn');
+  if (dotBtn) {
+    const dur     = state.activeTool.dur;
+    const withDot = avail[dur + '_dot'] !== false;
+    dotBtn.classList.toggle('unavailable', !withDot && !state.activeTool.dotted);
   }
 }
 
 // ── Canvas: clic para insertar / seleccionar nota ─────────────
 canvas.addEventListener('mousedown', e => {
   const rect = canvas.getBoundingClientRect();
-  const cx = e.clientX - rect.left;
-  const cy = e.clientY - rect.top;
+  const cx   = e.clientX - rect.left;
+  const cy   = e.clientY - rect.top;
 
-  // ¿Se hizo clic sobre una nota existente?
+  // Clic sobre nota existente → seleccionar
   const hit = noteAt(cx, cy);
   if (hit >= 0) {
     state.selectedNote = hit;
     _dragging = true;
-    _dragIdx = hit;
+    _dragIdx  = hit;
     render();
     return;
   }
 
-  // Insertar nota nueva
   state.selectedNote = -1;
   const row = getRow(cy);
   if (row < 0) { render(); return; }
 
+  const t      = state.activeTool;
+  const dur    = t.dur;
+  const dotted = t.dotted || false;
+
+  // Validación estricta: bloquear si no cabe
+  if (!fitsInCurrentMeasure(dur, dotted)) {
+    render();
+    return;
+  }
+
   pushHistory();
   const naturalNote = yToNote(cy, row);
-  const t = state.activeTool;
   const nn = {
-    note: naturalNote,
-    dur: t.dur,
-    rest: t.rest,
-    accidental: t.rest ? 'none' : state.activeAccidental,
+    note:        naturalNote,
+    dur,
+    dotted,
+    rest:        t.rest,
+    accidental:  t.rest ? 'none' : state.activeAccidental,
     octaveOffset: 0,
   };
 
-  const npr = Math.floor((canvas.width - ML - MR) / NW);
-  const s0 = state.currentPage * RPP * npr;
-  const col = Math.floor((cx - ML) / NW);
-  const idx = s0 + row * npr + col;
-
-  state.notes.splice(Math.max(0, Math.min(idx, state.notes.length)), 0, nn);
-  state.selectedNote = Math.max(0, Math.min(idx, state.notes.length - 1));
+  // Insertar al final (el layout proporcional ubica las notas visualmente)
+  state.notes.push(nn);
+  state.selectedNote = state.notes.length - 1;
   render();
 });
 
 // ── Canvas: arrastre para mover nota ─────────────────────────
 let _dragging = false;
-let _dragIdx = -1;
+let _dragIdx  = -1;
 
 canvas.addEventListener('mousemove', e => {
-  if (!_dragging || _dragIdx < -3) return;
-  const rect = canvas.getBoundingClientRect();
-  const cy = e.clientY - rect.top;
-  const row = getRow(cy);
-  if (row >= -3) {
-    state.notes[_dragIdx].note = yToNote(cy, row);
-    render();
+  if (!_dragging || _dragIdx < 0) return;
+  const rect    = canvas.getBoundingClientRect();
+  const cy      = e.clientY - rect.top;
+  const row     = getRow(cy);
+  if (row >= 0) {
+    const newNote = yToNote(cy, row);
+    if (state.notes[_dragIdx] && state.notes[_dragIdx].note !== newNote) {
+      state.notes[_dragIdx] = { ...state.notes[_dragIdx], note: newNote };
+      render();
+    }
   }
 });
 
-canvas.addEventListener('mouseup', () => { _dragging = false; _dragIdx = -1; });
+canvas.addEventListener('mouseup',    () => { _dragging = false; _dragIdx = -1; });
 canvas.addEventListener('mouseleave', () => { _dragging = false; });
 
-// ── Toolbar: notas ────────────────────────────────────────────
-document.querySelectorAll('.tool-btn:not([data-rest])').forEach(btn => {
+// ── Toolbar: botones de nota/silencio ─────────────────────────
+document.querySelectorAll('.tool-btn[data-dur]').forEach(btn => {
   btn.addEventListener('click', () => {
-    document.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('active'));
+    if (btn.disabled) return;
+    const dur  = btn.dataset.dur;
+    const rest = btn.dataset.rest === '1';
+    state.activeTool = { ...state.activeTool, dur, rest };
+    document.querySelectorAll('.tool-btn[data-dur]').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
-    state.activeTool = { dur: btn.dataset.dur, rest: false };
+    updateToolbarAvailability();
   });
 });
 
-// ── Toolbar: silencios ────────────────────────────────────────
-document.querySelectorAll('.tool-btn[data-rest]').forEach(btn => {
-  btn.addEventListener('click', () => {
-    document.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('active'));
-    btn.classList.add('active');
-    state.activeTool = { dur: btn.dataset.dur, rest: true };
-  });
+// ── Puntillo ─────────────────────────────────────────────────
+document.getElementById('dot-btn').addEventListener('click', () => {
+  state.activeTool.dotted = !state.activeTool.dotted;
+  document.getElementById('dot-btn').classList.toggle('active', state.activeTool.dotted);
+  updateToolbarAvailability();
 });
 
-// ── Toolbar: accidentales ─────────────────────────────────────
-['acc-none', 'acc-sharp', 'acc-flat'].forEach(id => {
-  document.getElementById(id).addEventListener('click', () => {
+// ── Accidentales ─────────────────────────────────────────────
+document.querySelectorAll('.acc-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    state.activeAccidental = btn.dataset.acc;
     document.querySelectorAll('.acc-btn').forEach(b => b.classList.remove('active'));
-    document.getElementById(id).classList.add('active');
-    state.activeAccidental = id.replace('acc-', '');
+    btn.classList.add('active');
   });
 });
-document.getElementById('acc-none').classList.add('active');
 
-// ── Toolbar: escala z2 ────────────────────────────────────────
-document.getElementById('z2-val').addEventListener('change', e => {
-  state.z2 = parseInt(e.target.value) || 5;
-  document.getElementById('z2-prop').value = state.z2;
-  updateCodePanel();
-});
-document.getElementById('z2-prop').addEventListener('change', e => {
-  state.z2 = parseInt(e.target.value) || 5;
-  document.getElementById('z2-val').value = state.z2;
-  updateCodePanel();
-});
-
-// ── Propiedades ───────────────────────────────────────────────
-document.getElementById('title-prop').addEventListener('input', e => {
+// ── Título ───────────────────────────────────────────────────
+document.getElementById('title-input').addEventListener('input', e => {
   state.title = e.target.value;
   updateCodePanel();
 });
-document.getElementById('bpm-prop').addEventListener('change', e => {
-  state.bpm = parseInt(e.target.value) || 120;
+
+// ── z2 ───────────────────────────────────────────────────────
+document.getElementById('z2-val').addEventListener('change', e => {
+  state.z2 = parseInt(e.target.value) || 5;
+  updateCodePanel();
 });
 
-// ── Acciones: deshacer / rehacer / borrar ─────────────────────
+// ── Compás ────────────────────────────────────────────────────
+document.getElementById('time-sig-sel').addEventListener('change', e => {
+  const parts = e.target.value.split('/').map(Number);
+  state.timeSignature = { num: parts[0], den: parts[1] };
+  render();
+});
+
+// ── MCU ───────────────────────────────────────────────────────
+document.getElementById('mcu-sel').addEventListener('change', e => {
+  state.mcu = e.target.value;
+  const mcuKey = e.target.value === 'atmega328p' ? 'atmega' : e.target.value;
+  ['esp32', 'arduino', 'atmega'].forEach(k => {
+    const el = document.getElementById(`mcu-${k}-block`);
+    if (el) el.style.display = k === mcuKey ? 'flex' : 'none';
+  });
+  render();
+});
+
+['esp32', 'arduino', 'atmega'].forEach(k => {
+  const el = document.getElementById(`mcu-${k}-code`);
+  if (el) el.addEventListener('input', () => updateCodePanel());
+});
+
+// ── Acciones ─────────────────────────────────────────────────
 document.getElementById('btn-undo').addEventListener('click', () => { if (undo()) render(); });
 document.getElementById('btn-redo').addEventListener('click', () => { if (redo()) render(); });
 document.getElementById('btn-delete').addEventListener('click', () => { if (deleteSelected()) render(); });
 
-// ── Atajos de teclado ─────────────────────────────────────────
-document.addEventListener('keydown', e => {
-  if (e.ctrlKey && e.key === 'z') { e.preventDefault(); if (undo()) render(); }
-  if (e.ctrlKey && e.key === 'y') { e.preventDefault(); if (redo()) render(); }
-  if ((e.key === 'Delete' || e.key === 'Backspace') && state.selectedNote >= 0) {
-    e.preventDefault();
-    if (deleteSelected()) render();
-  }
-});
-
-// ── Paginación ────────────────────────────────────────────────
-document.getElementById('btn-prev-page').addEventListener('click', () => {
-  if (state.currentPage > 0) { state.currentPage--; render(); }
-});
-document.getElementById('btn-next-page').addEventListener('click', () => {
-  if (state.currentPage < state.pages - 1) { state.currentPage++; render(); }
-});
-
-// ── Panel lateral: tabs ───────────────────────────────────────
-document.querySelectorAll('.side-tab').forEach(tab => {
-  tab.addEventListener('click', () => {
-    document.querySelectorAll('.side-tab').forEach(t => t.classList.remove('active'));
-    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
-    tab.classList.add('active');
-    document.getElementById('tab-' + tab.dataset.tab).classList.add('active');
-  });
-});
-
-// ── Limpiar partitura ─────────────────────────────────────────
 document.getElementById('btn-clear').addEventListener('click', () => {
-  if (clearAll()) render();
+  if (confirm('¿Limpiar toda la partitura?')) { if (clearAll()) render(); }
 });
 
-// ── Audio: reproducir / detener ───────────────────────────────
 document.getElementById('btn-play').addEventListener('click', playScore);
 document.getElementById('btn-stop').addEventListener('click', stopScore);
 
-// ── Guardar proyecto (JSON) ───────────────────────────────────
 document.getElementById('btn-save').addEventListener('click', () => {
   const blob = new Blob([exportProject()], { type: 'application/json' });
   const a = document.createElement('a');
@@ -194,7 +229,6 @@ document.getElementById('btn-save').addEventListener('click', () => {
   a.click();
 });
 
-// ── Cargar proyecto (JSON) ────────────────────────────────────
 document.getElementById('btn-load').addEventListener('click', () => {
   document.getElementById('file-input').click();
 });
@@ -206,21 +240,21 @@ document.getElementById('file-input').addEventListener('change', e => {
   reader.onload = ev => {
     try {
       importProject(ev.target.result);
-      // Sincronizar inputs con el estado cargado
-      document.getElementById('z2-val').value = state.z2;
-      document.getElementById('z2-prop').value = state.z2;
-      document.getElementById('title-prop').value = state.title;
-      document.getElementById('bpm-prop').value = state.bpm;
+      document.getElementById('title-input').value = state.title;
+      document.getElementById('z2-val').value       = state.z2;
+      document.getElementById('bpm-prop').value     = state.bpm;
+      const tsSel = document.getElementById('time-sig-sel');
+      const tsVal = `${state.timeSignature.num}/${state.timeSignature.den}`;
+      if ([...tsSel.options].some(o => o.value === tsVal)) tsSel.value = tsVal;
+      document.getElementById('mcu-sel').value = state.mcu || 'esp32';
+      document.getElementById('mcu-sel').dispatchEvent(new Event('change'));
       render();
-    } catch {
-      alert('Error al cargar el archivo. Verifica que sea un proyecto válido.');
-    }
+    } catch { alert('Error al cargar el archivo.'); }
   };
   reader.readAsText(file);
   e.target.value = '';
 });
 
-// ── Exportar .ino ─────────────────────────────────────────────
 document.getElementById('btn-export').addEventListener('click', () => {
   const code = document.getElementById('code-output').textContent;
   const blob = new Blob([code], { type: 'text/plain' });
@@ -230,5 +264,49 @@ document.getElementById('btn-export').addEventListener('click', () => {
   a.click();
 });
 
-// ── Redimensión de ventana ────────────────────────────────────
+document.getElementById('btn-copy').addEventListener('click', async () => {
+  try {
+    await navigator.clipboard.writeText(document.getElementById('code-output').textContent);
+    const btn = document.getElementById('btn-copy');
+    btn.textContent = '✓ Copiado';
+    setTimeout(() => btn.textContent = 'Copiar', 1500);
+  } catch { alert('No se pudo copiar al portapapeles.'); }
+});
+
+document.getElementById('btn-prev-page').addEventListener('click', () => {
+  if (state.currentPage > 0) { state.currentPage--; render(); }
+});
+document.getElementById('btn-next-page').addEventListener('click', () => {
+  if (state.currentPage < state.pages - 1) { state.currentPage++; render(); }
+});
+
+document.getElementById('btn-theme').addEventListener('click', () => {
+  const root   = document.documentElement;
+  const isDark = root.getAttribute('data-theme') === 'dark';
+  root.setAttribute('data-theme', isDark ? 'light' : 'dark');
+  render();
+});
+
+document.querySelectorAll('.tab[data-tab]').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.tab[data-tab]').forEach(t => t.classList.remove('active'));
+    tab.classList.add('active');
+    document.getElementById('tab-code').style.display  = tab.dataset.tab === 'code'  ? 'flex' : 'none';
+    document.getElementById('tab-props').style.display = tab.dataset.tab === 'props' ? 'flex' : 'none';
+  });
+});
+
+document.getElementById('bpm-prop').addEventListener('change', e => {
+  state.bpm = parseInt(e.target.value) || 120;
+});
+
+document.addEventListener('keydown', e => {
+  if (e.ctrlKey && e.key === 'z') { e.preventDefault(); if (undo()) render(); }
+  if (e.ctrlKey && e.key === 'y') { e.preventDefault(); if (redo()) render(); }
+  if ((e.key === 'Delete' || e.key === 'Backspace') && state.selectedNote >= 0) {
+    e.preventDefault();
+    if (deleteSelected()) render();
+  }
+});
+
 window.addEventListener('resize', render);
