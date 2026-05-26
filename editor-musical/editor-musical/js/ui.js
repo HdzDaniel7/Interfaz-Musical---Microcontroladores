@@ -242,7 +242,7 @@ document.getElementById('file-input').addEventListener('change', e => {
       importProject(ev.target.result);
       document.getElementById('title-input').value = state.title;
       document.getElementById('z2-val').value       = state.z2;
-      document.getElementById('bpm-prop').value     = state.bpm;
+      document.getElementById('bpm').value     = state.bpm;
       const tsSel = document.getElementById('time-sig-sel');
       const tsVal = `${state.timeSignature.num}/${state.timeSignature.den}`;
       if ([...tsSel.options].some(o => o.value === tsVal)) tsSel.value = tsVal;
