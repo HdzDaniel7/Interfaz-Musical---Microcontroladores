@@ -199,27 +199,27 @@ function drawNote(n, x, row, sel) {
     ctx.beginPath(); ctx.ellipse(x, y, 6, 4, -0.2, 0, Math.PI * 2);
     ctx.lineWidth = 1.4; ctx.stroke();
     const sx  = stemUp ? x + 6 : x - 6;
-    const sy2 = stemUp ? y - 25 : y + 25;
+    const sy2 = stemUp ? y - 30 : y + 30;
     ctx.beginPath(); ctx.moveTo(sx, y); ctx.lineTo(sx, sy2);
     ctx.lineWidth = 1.4; ctx.stroke();
 
   } else {
     ctx.beginPath(); ctx.ellipse(x, y, 6, 4, -0.3, 0, Math.PI * 2); ctx.fill();
     const sx  = stemUp ? x + 6 : x - 6;
-    const sy2 = stemUp ? y - 25 : y + 25;
+    const sy2 = stemUp ? y - 30 : y + 30;
     ctx.lineWidth = 1.4;
     ctx.beginPath(); ctx.moveTo(sx, y); ctx.lineTo(sx, sy2); ctx.stroke();
 
     if (n.dur === 'MT' || n.dur === 'CT') {
       const dir = stemUp ? 1 : -1;
       ctx.beginPath();
-      ctx.moveTo(sx, sy2);
-      ctx.quadraticCurveTo(sx + 10 * dir, sy2 + 8, sx + 4 * dir, sy2 + 16);
+      ctx.moveTo(sx, sy2 + dir * 2);
+      ctx.quadraticCurveTo(sx + 10 , sy2 + 9 * dir, sx + 4  , sy2 + 18 * dir);
       ctx.stroke();
       if (n.dur === 'CT') {
         ctx.beginPath();
-        ctx.moveTo(sx, sy2 + 8);
-        ctx.quadraticCurveTo(sx + 10 * dir, sy2 + 16, sx + 4 * dir, sy2 + 24);
+        ctx.moveTo(sx, sy2 + 8 * dir );
+        ctx.quadraticCurveTo(sx + 9 , sy2 + 16 * dir, sx + 2 , sy2 + 24 * dir);
         ctx.stroke();
       }
     }

@@ -8,6 +8,15 @@ let playAudioCtx = null;
 function playScore() {
   if (isPlaying || !state.notes.length) return;
 
+  // Leer BPM del input en el momento de reproducir
+  const bpm        = parseFloat(document.getElementById('bpm').value) || 120;
+  // Una negra (T = E*40 = 400ms base) a este BPM cuánto dura en segundos
+  // 60 / BPM = duración de una negra en segundos
+  const beatSec    = 60 / bpm;
+  // Factor de escala: cuántos segundos por ms del sistema original
+  // T original = E*40 = 400ms → beatSec / 0.4
+  const msToSec    = beatSec / 400;
+
   isPlaying    = true;
   playAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
 
@@ -23,7 +32,7 @@ function playScore() {
   let t = playAudioCtx.currentTime;
 
   state.notes.forEach(n => {
-    const baseDur = DUR_MS[n.dur] / 500;
+    const baseDur = DUR_MS[n.dur] * msToSec;
     const dur     = n.dotted ? baseDur * 1.5 : baseDur;
 
     if (n.rest) {
