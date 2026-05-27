@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="es" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Editor Musical ESP32</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<div id="app">
+
+  <!-- TOOLBAR -->
+  <header class="toolbar">
+
+    <!-- Fila 1: controles de proyecto + herramientas musicales -->
+    <div class="row row-1">
+      <input class="project-title" id="title-input" type="text"
+             value="Mi_Cancion" placeholder="Título del proyecto"
+             title="Nombre del proyecto">
+      <div class="divider"></div>
+
+      <label class="field-group" title="Escala base z2">
+        <span class="field-label">z2</span>
+        <input class="num-input sel-input" type="number" id="z2-val" value="5" min="0" max="9">
+      </label>
+      <div class="divider"></div>
+
+      <label class="field-group" title="Compás">
+        <span class="field-label">Compás</span>
+        <select class="sel-input" id="time-sig-sel">
+          <option value="2/4">2/4</option>
+          <option value="3/4">3/4</option>
+          <option value="4/4" selected>4/4</option>
+          <option value="6/8">6/8</option>
+        </select>
+      </label>
+      <div class="divider"></div>
+
+      <label class="field-group" title="Compás">
+        <span class="field-label">Tempo BPM</span>
+          <input class="num-input" type="number" id="bpm" value="120" min="40" max="300">
+        </select>
+      </label>
+      <div class="divider"></div>
+
+      <label class="field-group" title="Microcontrolador">
+        <span class="field-label">MCU</span>
+        <select class="sel-input" id="mcu-sel">
+          <option value="esp32">ESP32</option>
+          <option value="arduino">Arduino</option>
+          <option value="atmega328p">ATmega328P</option>
+        </select>
+      </label>
+      <div class="divider"></div>
+
+      <span class="group-label">Nota</span>
+      <button class="tool-btn" data-dur="TT" data-rest="0" title="Redonda"><span class="sym">𝅝</span><span class="lbl">Rdon</span></button>
+      <button class="tool-btn" data-dur="DT" data-rest="0" title="Blanca"><span class="sym">𝅗𝅥</span><span class="lbl">Blan</span></button>
+      <button class="tool-btn active" data-dur="T" data-rest="0" title="Negra"><span class="sym">♩</span><span class="lbl">Negr</span></button>
+      <button class="tool-btn" data-dur="MT" data-rest="0" title="Corchea"><span class="sym">♪</span><span class="lbl">Corc</span></button>
+      <button class="tool-btn" data-dur="CT" data-rest="0" title="Semicorchea"><span class="sym">𝅘𝅥𝅯</span><span class="lbl">Semi</span></button>
+      <button class="tool-btn dot-btn" id="dot-btn" title="Puntillo"><span class="sym">•</span><span class="lbl">Punt</span></button>
+      <div class="divider"></div>
+
+      <span class="group-label">Silencio</span>
+      <button class="tool-btn" data-dur="TT" data-rest="1" title="Silencio redonda"><span class="sym">𝄻</span><span class="lbl">Rdon</span></button>
+      <button class="tool-btn" data-dur="DT" data-rest="1" title="Silencio blanca"><span class="sym">𝄼</span><span class="lbl">Blan</span></button>
+      <button class="tool-btn" data-dur="T"  data-rest="1" title="Silencio negra"><span class="sym">𝄽</span><span class="lbl">Negr</span></button>
+      <button class="tool-btn" data-dur="MT" data-rest="1" title="Silencio corchea"><span class="sym">𝄾</span><span class="lbl">Corc</span></button>
+      <div class="divider"></div>
+
+      <span class="group-label">Acc.</span>
+      <button class="acc-btn active" id="acc-none"  data-acc="none"  title="Natural">♮</button>
+      <button class="acc-btn"        id="acc-sharp" data-acc="sharp" title="Sostenido">♯</button>
+      <button class="acc-btn"        id="acc-flat"  data-acc="flat"  title="Bemol">♭</button>
+    </div>
+
+    <!-- Fila 2: acciones -->
+    <div class="row row-2">
+      <button class="icon-btn" id="btn-undo" title="Deshacer (Ctrl+Z)">
+        <svg viewBox="0 0 24 24"><path d="M9 14 4 9l5-5"/><path d="M4 9h10a4 4 0 0 1 0 8h-1"/></svg>
+      </button>
+      <button class="icon-btn" id="btn-redo" title="Rehacer (Ctrl+Y)">
+        <svg viewBox="0 0 24 24"><path d="M15 14l5-5-5-5"/><path d="M20 9H10a4 4 0 0 0 0 8h1"/></svg>
+      </button>
+      <button class="icon-btn danger" id="btn-delete" title="Borrar nota (Supr)">
+        <svg viewBox="0 0 24 24"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg>
+      </button>
+      <div class="divider"></div>
+
+      <button class="icon-btn" id="btn-play" title="Reproducir">
+        <svg viewBox="0 0 24 24"><polygon points="5,3 19,12 5,21" fill="currentColor" stroke="none"/></svg>
+      </button>
+      <button class="icon-btn" id="btn-stop" title="Detener">
+        <svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2" fill="currentColor" stroke="none"/></svg>
+      </button>
+      <div class="divider"></div>
+
+      <button class="icon-btn" id="btn-save" title="Guardar proyecto (.json)">
+        <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12l7 7 7-7"/></svg>
+      </button>
+      <button class="icon-btn" id="btn-load" title="Cargar proyecto (.json)">
+        <svg viewBox="0 0 24 24"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
+      </button>
+      <button class="icon-btn" id="btn-export" title="Exportar código (.ino)">
+        <svg viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V9z"/><polyline points="14,3 14,9 20,9"/><line x1="9" y1="17" x2="15" y2="17"/></svg>
+      </button>
+      <input type="file" id="file-input" accept=".json" style="display:none">
+      <div class="divider"></div>
+
+      <button class="icon-btn" id="btn-prev-page" title="Página anterior">
+        <svg viewBox="0 0 24 24"><polyline points="15,18 9,12 15,6"/></svg>
+      </button>
+      <span class="page-label" id="page-ind">Pág 1/1</span>
+      <button class="icon-btn" id="btn-next-page" title="Página siguiente">
+        <svg viewBox="0 0 24 24"><polyline points="9,18 15,12 9,6"/></svg>
+      </button>
+      <div class="divider"></div>
+
+      <button class="icon-btn danger" id="btn-clear" title="Limpiar todo">
+        <svg viewBox="0 0 24 24"><path d="M3 6h18M19 6l-1 14H6L5 6M8 6V4h8v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
+      </button>
+
+      <div style="margin-left:auto">
+        <button class="icon-btn" id="btn-theme" title="Cambiar tema claro/oscuro">
+          <svg viewBox="0 0 24 24"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+        </button>
+      </div>
+    </div>
+
+  </header>
+
+  <!-- ÁREA PRINCIPAL -->
+  <div class="workspace">
+
+    <!-- Pentagrama -->
+    <div class="score-wrapper" id="score-container">
+      <canvas id="score-canvas"></canvas>
+    </div>
+
+    <!-- Panel lateral -->
+    <aside class="side-panel" id="side-panel">
+
+      <div class="tabs" id="side-tabs">
+        <button class="tab active" data-tab="code">Código</button>
+        <button class="tab"        data-tab="props">Propiedades</button>
+      </div>
+
+      <!-- Tab Código -->
+      <div class="tab-content" id="tab-code">
+        <div class="code-header">
+          <span class="code-title" id="code-title">Mi_Cancion.ino</span>
+          <button class="copy-btn" id="btn-copy">Copiar</button>
+        </div>
+        <pre class="code-output" id="code-output" tabindex="0"></pre>
+      </div>
+
+      <!-- Tab Propiedades -->
+      <div class="tab-content" id="tab-props" style="display:none">
+        <div class="props-tab">
+
+          <section class="prop-section">
+            <h3 class="section-title">Partitura</h3>
+            <div class="prop-row"><span class="prop-label">Notas totales</span><span class="prop-value" id="prop-notes">0</span></div>
+            <div class="prop-row"><span class="prop-label">Compases</span><span class="prop-value" id="prop-measures">0</span></div>
+            <div class="prop-row"><span class="prop-label">Completos</span><span class="prop-value" id="prop-complete">0</span></div>
+          </section>
+
+          <section class="prop-section">
+            <h3 class="section-title">Código MCU adicional</h3>
+            <div class="mcu-codes">
+              <div class="mcu-block" id="mcu-esp32-block">
+                <div class="mcu-name">ESP32</div>
+                <textarea class="mcu-textarea" id="mcu-esp32-code"
+                  placeholder="Código adicional ESP32..."></textarea>
+              </div>
+              <div class="mcu-block" id="mcu-arduino-block" style="display:none">
+                <div class="mcu-name">Arduino</div>
+                <textarea class="mcu-textarea" id="mcu-arduino-code"
+                  placeholder="Código adicional Arduino..."></textarea>
+              </div>
+              <div class="mcu-block" id="mcu-atmega-block" style="display:none">
+                <div class="mcu-name">ATmega328P</div>
+                <textarea class="mcu-textarea" id="mcu-atmega-code"
+                  placeholder="Código adicional ATmega328P..."></textarea>
+              </div>
+            </div>
+          </section>
+
+          <section class="prop-section">
+            <h3 class="section-title">Equivalencias accidentales</h3>
+            <div class="equiv-grid">
+              <span>DO♯ = RE♭</span><span>RE♯ = MI♭</span>
+              <span>FA♯ = SOL♭</span><span>SOL♯ = LA♭</span><span>LA♯ = SI♭</span>
+            </div>
+            <p class="note-small">El código siempre genera sostenidos.</p>
+          </section>
+
+          <section class="prop-section">
+            <h3 class="section-title">Duraciones (E = 10 ms)</h3>
+            <div class="dur-table">
+              <span class="dur-sym">𝅝</span><code class="dur-code">TT</code><span class="dur-name">Redonda</span><span class="dur-val">E×160</span>
+              <span class="dur-sym">𝅗𝅥</span><code class="dur-code">DT</code><span class="dur-name">Blanca</span><span class="dur-val">E×80</span>
+              <span class="dur-sym">♩</span><code class="dur-code">T</code><span class="dur-name">Negra</span><span class="dur-val">E×40</span>
+              <span class="dur-sym">♪</span><code class="dur-code">MT</code><span class="dur-name">Corchea</span><span class="dur-val">E×20</span>
+              <span class="dur-sym">𝅘𝅥𝅯</span><code class="dur-code">CT</code><span class="dur-name">Semicorchea</span><span class="dur-val">E×10</span>
+            </div>
+          </section>
+
+          <section class="prop-section">
+            <h3 class="section-title">Líneas del pentagrama</h3>
+            <div class="staff-ref">
+              <div class="staff-ref-row"><span>Línea 5 (sup.)</span><strong>FA</strong></div>
+              <div class="staff-ref-row"><span>Línea 4</span><strong>RE</strong></div>
+              <div class="staff-ref-row"><span>Línea 3</span><strong>SI</strong></div>
+              <div class="staff-ref-row"><span>Línea 2</span><strong>SOL</strong></div>
+              <div class="staff-ref-row"><span>Línea 1 (inf.)</span><strong>MI ← ref. 0</strong></div>
+            </div>
+          </section>
+
+        </div>
+      </div>
+
+    </aside>
+
+  </div><!-- /.workspace -->
+
+  <!-- BARRA DE ESTADO -->
+  <footer class="statusbar">
+    <span class="item"><span class="dot"></span><span id="status-note">Sin selección</span></span>
+    <span class="sep">|</span><span class="item" id="status-count">0 notas</span>
+    <span class="sep">|</span><span class="item" id="status-dur">0 compases</span>
+    <span class="sep">|</span><span class="item" id="status-timesig">Compás: 4/4</span>
+    <span class="sep">|</span><span class="item" id="status-mcu">MCU: ESP32</span>
+  </footer>
+
+</div><!-- /#app -->
+
+<script src="js/constants.js"></script>
+<script src="js/state.js"></script>
+<script src="js/music.js"></script>
+<script src="js/renderer.js"></script>
+<script src="js/audio.js"></script>
+<script src="js/ui.js"></script>
+
+<script>
+  const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+  if (prefersDark) document.documentElement.setAttribute('data-theme', 'dark');
+
+  const recovered = loadFromLocalStorage();
+  if (recovered) {
+    const titleEl = document.getElementById('title-input');
+    const z2El    = document.getElementById('z2-val');
+    const bpmEl   = document.getElementById('bpm');
+    const tsEl    = document.getElementById('time-sig-sel');
+    const mcuEl   = document.getElementById('mcu-sel');
+
+    if (titleEl) titleEl.value = state.title;
+    if (z2El)    z2El.value    = state.z2;
+    if (bpmEl)   bpmEl.value   = state.bpm;
+    if (tsEl) {
+      const tsVal = `${state.timeSignature.num}/${state.timeSignature.den}`;
+      if ([...tsEl.options].some(o => o.value === tsVal)) tsEl.value = tsVal;
+    }
+    if (mcuEl) {
+      mcuEl.value = state.mcu || 'esp32';
+      const mcuKey = (state.mcu === 'atmega328p') ? 'atmega' : (state.mcu || 'esp32');
+      ['esp32', 'arduino', 'atmega'].forEach(k => {
+        const el = document.getElementById(`mcu-${k}-block`);
+        if (el) el.style.display = (k === mcuKey) ? 'flex' : 'none';
+      });
+    }
+    console.log(`Proyecto recuperado: "${state.title}" — ${state.notes.length} notas`);
+  }
+
+  render();
+</script>
+
+</body>
+</html>
