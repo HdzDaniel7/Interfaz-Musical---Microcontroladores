@@ -2,8 +2,9 @@
    renderer.js — Dibujo del pentagrama y las notas en canvas
    ============================================================ */
 
-const canvas = document.getElementById('score-canvas');
-const ctx    = canvas.getContext('2d');
+let cursorX = -1;
+let cursorY   = -1;
+let cursorRow = -1;
 
 function cssVar(v) {
   return getComputedStyle(document.documentElement).getPropertyValue(v).trim();
@@ -99,6 +100,46 @@ function drawStaff() {
   const rowW      = canvas.width - ML - MR;
 
   for (let r = 0; r < RPP; r++) {
+    // ── Highlight del compás activo durante reproducción ──────
+    if (typeof activeNoteIdx !== 'undefined' && activeNoteIdx >= 0) {
+      const measures      = analyzeMeasures();
+      const activeMeasure = measures.find(m =>
+        activeNoteIdx >= m.startIdx && activeNoteIdx < m.endIdx
+      );
+
+      if (activeMeasure) {
+        const layout       = buildLayout();
+        const rowOffset    = state.currentPage * RPP;
+        const notesInMeasure = layout.filter(l =>
+          l.noteIdx >= activeMeasure.startIdx && l.noteIdx < activeMeasure.endIdx
+        );
+
+        if (notesInMeasure.length > 0) {
+          const firstNote = notesInMeasure[0];
+          const lastNote  = notesInMeasure[notesInMeasure.length - 1];
+          const pageRow   = firstNote.row - rowOffset;
+
+          if (pageRow === r) {
+            const capacity   = beatsPerMeasure();
+            const measurePx  = capacity * NW;
+            // Calcular x inicio del compás desde el índice del primer nota
+            const xStart = firstNote.x - (NW / 2);
+            const xEnd   = xStart + measurePx;
+
+            ctx.save();
+            ctx.fillStyle   = cssVar('--accent') || '#4A90D9';
+            ctx.globalAlpha = 0.07;
+            ctx.fillRect(
+              xStart,
+              sY(r, 0) - 4,
+              xEnd - xStart,
+              SS * 4 + 8
+            );
+            ctx.restore();
+          }
+        }
+      }
+    }
     // Cinco líneas horizontales
     ctx.lineWidth   = 0.8;
     ctx.strokeStyle = cssVar('--staff-line');
@@ -122,7 +163,7 @@ function drawStaff() {
     ctx.fillText(String(state.timeSignature.num), ML - 14, sY(r, 1) + 2);
     ctx.fillText(String(state.timeSignature.den), ML - 14, sY(r, 3) + 2);
 
-    // Divisores de compás: cada measurePx px en coordenadas globales de fila
+    // Divisores de compás
     ctx.strokeStyle = cssVar('--staff-bar');
     ctx.lineWidth   = 0.8;
     for (let b = 1; ; b++) {
@@ -142,14 +183,45 @@ function drawStaff() {
     ctx.moveTo(canvas.width - MR, sY(r, 0));
     ctx.lineTo(canvas.width - MR, sY(r, 4));
     ctx.stroke();
-  }
-}
+
+    // ── Cursor de posición ─────────────────────────────────
+    if (cursorX >= ML && cursorX <= canvas.width - MR && cursorRow === r) {
+      ctx.save();
+      ctx.strokeStyle = cssVar('--accent') || '#4A90D9';
+      ctx.lineWidth   = 1;
+      ctx.globalAlpha = 0.45;
+      ctx.setLineDash([4, 3]);
+      ctx.beginPath();
+      ctx.moveTo(cursorX, sY(r, 0) - 8);
+      ctx.lineTo(cursorX, sY(r, 4) + 8);
+      ctx.stroke();
+      ctx.restore();
+
+      // Etiqueta de nota bajo la línea
+      const noteAtCursor = yToNote(cursorY, r);
+      if (noteAtCursor) {
+        ctx.save();
+        ctx.font         = `500 10px ${cssVar('--font-sans') || 'sans-serif'}`;
+        ctx.textAlign    = 'center';
+        ctx.textBaseline = 'top';
+        ctx.fillStyle    = cssVar('--accent') || '#4A90D9';
+        ctx.globalAlpha  = 0.7;
+        ctx.fillText(NOTE_DISPLAY[noteAtCursor] || noteAtCursor, cursorX, sY(r, 4) + 14);
+        ctx.restore();
+      }
+    }
+
+  } // ← cierre del for
+} // ← cierre de drawStaff
 
 // ── Dibuja una nota (o silencio) ──────────────────────────────
-function drawNote(n, x, row, sel) {
-  const noteColor = sel
-    ? cssVar('--note-selected')
-    : (n.rest ? cssVar('--note-rest') : cssVar('--note-normal'));
+function drawNote(n, x, row, sel, noteIdx) {
+  const isActive  = (noteIdx === activeNoteIdx);
+  const noteColor = isActive
+    ? '#E05A00'                        // naranja: activa (tocando ahora)
+    : sel
+      ? cssVar('--note-selected')      // rojo: seleccionada por el usuario
+      : (n.rest ? cssVar('--note-rest') : cssVar('--note-normal'));
 
   ctx.fillStyle   = noteColor;
   ctx.strokeStyle = noteColor;
@@ -240,7 +312,11 @@ function drawNote(n, x, row, sel) {
   ctx.font         = `600 11px ${cssVar('--font-sans') || 'sans-serif'}`;
   ctx.textAlign    = 'center';
   ctx.textBaseline = 'top';
-  ctx.fillStyle    = sel ? cssVar('--note-selected') : cssVar('--note-label');
+  ctx.fillStyle = isActive
+    ? '#E05A00'
+    : sel
+      ? cssVar('--note-selected')
+      : cssVar('--note-label');
   const accSuffix  = n.accidental === 'sharp' ? '#' : n.accidental === 'flat' ? 'b' : '';
   ctx.fillText(NOTE_DISPLAY[n.note] + accSuffix, x, sY(row, 4) + 35);
 
@@ -286,12 +362,14 @@ function render() {
   for (const { note, x, row, noteIdx } of layout) {
     const pageRow = row - rowOffset;
     if (pageRow < 0 || pageRow >= RPP) continue;
-    drawNote(note, x, pageRow, noteIdx === state.selectedNote);
+    drawNote(note, x, pageRow, noteIdx === state.selectedNote, noteIdx);
   }
 
   document.getElementById('page-ind').textContent =
     `Pág ${state.currentPage + 1}/${state.pages}`;
 
-  updateStatus();
-  updateCodePanel();
+  if (typeof updateStatus   === 'function') updateStatus();
+  if (typeof updateCodePanel === 'function') updateCodePanel();
 }
+
+render();

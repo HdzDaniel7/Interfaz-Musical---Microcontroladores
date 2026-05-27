@@ -5,19 +5,17 @@
 let isPlaying    = false;
 let playAudioCtx = null;
 
+let activeNoteIdx = -1; // -1 = ninguna activa
+
 function playScore() {
   if (isPlaying || !state.notes.length) return;
 
-  // Leer BPM del input en el momento de reproducir
-  const bpm        = parseFloat(document.getElementById('bpm').value) || 120;
-  // Una negra (T = E*40 = 400ms base) a este BPM cuánto dura en segundos
-  // 60 / BPM = duración de una negra en segundos
-  const beatSec    = 60 / bpm;
-  // Factor de escala: cuántos segundos por ms del sistema original
-  // T original = E*40 = 400ms → beatSec / 0.4
-  const msToSec    = beatSec / 400;
+  const bpm     = parseFloat(document.getElementById('bpm').value) || 120;
+  const beatSec = 60 / bpm;
+  const msToSec = beatSec / 400;
 
   isPlaying    = true;
+  activeNoteIdx = -1;
   playAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
 
   const osc  = playAudioCtx.createOscillator();
@@ -31,24 +29,27 @@ function playScore() {
 
   let t = playAudioCtx.currentTime;
 
-  state.notes.forEach(n => {
+  state.notes.forEach((n, idx) => {
     const baseDur = DUR_MS[n.dur] * msToSec;
     const dur     = n.dotted ? baseDur * 1.5 : baseDur;
+
+    // Calcular cuántos ms desde ahora empieza esta nota
+    const msFromNow = (t - playAudioCtx.currentTime) * 1000;
+
+    // Programar el resaltado exactamente cuando empiece la nota
+    setTimeout(() => {
+      if (!isPlaying) return;
+      activeNoteIdx = idx;
+      render();
+    }, msFromNow);
 
     if (n.rest) {
       gain.gain.setValueAtTime(0, t);
     } else {
       let baseName, octaveOff;
-      if (n.note.endsWith('M')) {
-        baseName  = n.note.slice(0, -1);
-        octaveOff = 1;
-      } else if (n.note.endsWith('m')) {
-        baseName  = n.note.slice(0, -1);
-        octaveOff = -1;
-      } else {
-        baseName  = n.note;
-        octaveOff = 0;
-      }
+      if (n.note.endsWith('M'))      { baseName = n.note.slice(0, -1); octaveOff =  1; }
+      else if (n.note.endsWith('m')) { baseName = n.note.slice(0, -1); octaveOff = -1; }
+      else                           { baseName = n.note;              octaveOff =  0; }
 
       const enumName = codeNoteName(baseName, n.accidental);
       const freq     = noteFreq(enumName, state.z2, octaveOff);
@@ -62,7 +63,13 @@ function playScore() {
   });
 
   osc.stop(t + 0.01);
-  osc.onended = () => { isPlaying = false; };
+  osc.onended = () => {
+    isPlaying = false;
+    // Opción B: mantener última nota resaltada → no tocar activeNoteIdx
+    // Opción A: limpiar → descomentar la línea siguiente:
+    activeNoteIdx = -1;
+    render();
+  };
 }
 
 function stopScore() {
@@ -70,5 +77,8 @@ function stopScore() {
     try { playAudioCtx.close(); } catch (e) {}
     playAudioCtx = null;
   }
-  isPlaying = false;
+  isPlaying     = false;
+  // Opción B: mantener → no tocar activeNoteIdx
+  // Opción A: limpiar → activeNoteIdx = -1;
+  render();
 }

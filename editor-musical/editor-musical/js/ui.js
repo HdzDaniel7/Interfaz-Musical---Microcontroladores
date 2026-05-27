@@ -77,13 +77,54 @@ function updateToolbarAvailability() {
   }
 }
 
-// ── Canvas: clic para insertar / seleccionar nota ─────────────
+// ── Variables de cursor y arrastre ───────────────────────────
+let _dragging = false;
+let _dragIdx  = -1;
+
+// ── Canvas: mousemove — cursor + arrastre ─────────────────────
+canvas.addEventListener('mousemove', e => {
+  const rect = canvas.getBoundingClientRect();
+  const cx   = e.clientX - rect.left;
+  const cy   = e.clientY - rect.top;
+
+  // Actualizar cursor siempre
+  cursorX   = cx;
+  cursorY   = cy;
+  cursorRow = getRow(cy);
+
+  // Arrastre de nota
+  if (_dragging && _dragIdx >= 0) {
+    const row = getRow(cy);
+    if (row >= 0) {
+      const newNote = yToNote(cy, row);
+      if (state.notes[_dragIdx] && state.notes[_dragIdx].note !== newNote) {
+        state.notes[_dragIdx] = { ...state.notes[_dragIdx], note: newNote };
+        scheduleSave();
+      }
+    }
+  }
+
+  render();
+});
+
+// ── Canvas: mouseleave — limpiar cursor ───────────────────────
+canvas.addEventListener('mouseleave', () => {
+  _dragging = false;
+  cursorX   = -1;
+  cursorY   = -1;
+  cursorRow = -1;
+  render();
+});
+
+canvas.addEventListener('mouseup', () => { _dragging = false; _dragIdx = -1; });
+
+// ── Canvas: mousedown — seleccionar o insertar nota ───────────
 canvas.addEventListener('mousedown', e => {
   const rect = canvas.getBoundingClientRect();
   const cx   = e.clientX - rect.left;
   const cy   = e.clientY - rect.top;
 
-  // Clic sobre nota existente → seleccionar
+  // Clic sobre nota existente → seleccionar e iniciar arrastre
   const hit = noteAt(cx, cy);
   if (hit >= 0) {
     state.selectedNote = hit;
@@ -101,7 +142,6 @@ canvas.addEventListener('mousedown', e => {
   const dur    = t.dur;
   const dotted = t.dotted || false;
 
-  // Validación estricta: bloquear si no cabe
   if (!fitsInCurrentMeasure(dur, dotted)) {
     render();
     return;
@@ -118,28 +158,10 @@ canvas.addEventListener('mousedown', e => {
     octaveOffset: 0,
   };
 
-  // Insertar al final (el layout proporcional ubica las notas visualmente)
   state.notes.push(nn);
   state.selectedNote = state.notes.length - 1;
   render();
-});
-
-// ── Canvas: arrastre para mover nota ─────────────────────────
-let _dragging = false;
-let _dragIdx  = -1;
-
-canvas.addEventListener('mousemove', e => {
-  if (!_dragging || _dragIdx < 0) return;
-  const rect    = canvas.getBoundingClientRect();
-  const cy      = e.clientY - rect.top;
-  const row     = getRow(cy);
-  if (row >= 0) {
-    const newNote = yToNote(cy, row);
-    if (state.notes[_dragIdx] && state.notes[_dragIdx].note !== newNote) {
-      state.notes[_dragIdx] = { ...state.notes[_dragIdx], note: newNote };
-      render();
-    }
-  }
+  scheduleSave();
 });
 
 canvas.addEventListener('mouseup',    () => { _dragging = false; _dragIdx = -1; });
@@ -178,12 +200,14 @@ document.querySelectorAll('.acc-btn').forEach(btn => {
 document.getElementById('title-input').addEventListener('input', e => {
   state.title = e.target.value;
   updateCodePanel();
+  scheduleSave(); 
 });
 
 // ── z2 ───────────────────────────────────────────────────────
 document.getElementById('z2-val').addEventListener('change', e => {
   state.z2 = parseInt(e.target.value) || 5;
   updateCodePanel();
+  scheduleSave(); 
 });
 
 // ── Compás ────────────────────────────────────────────────────
@@ -191,6 +215,7 @@ document.getElementById('time-sig-sel').addEventListener('change', e => {
   const parts = e.target.value.split('/').map(Number);
   state.timeSignature = { num: parts[0], den: parts[1] };
   render();
+  scheduleSave(); 
 });
 
 // ── MCU ───────────────────────────────────────────────────────
@@ -210,12 +235,12 @@ document.getElementById('mcu-sel').addEventListener('change', e => {
 });
 
 // ── Acciones ─────────────────────────────────────────────────
-document.getElementById('btn-undo').addEventListener('click', () => { if (undo()) render(); });
-document.getElementById('btn-redo').addEventListener('click', () => { if (redo()) render(); });
-document.getElementById('btn-delete').addEventListener('click', () => { if (deleteSelected()) render(); });
+document.getElementById('btn-undo').addEventListener('click', () => { if (undo()) render(); scheduleSave(); });
+document.getElementById('btn-redo').addEventListener('click', () => { if (redo()) render(); scheduleSave(); });
+document.getElementById('btn-delete').addEventListener('click', () => { if (deleteSelected()) render(); scheduleSave(); });
 
 document.getElementById('btn-clear').addEventListener('click', () => {
-  if (confirm('¿Limpiar toda la partitura?')) { if (clearAll()) render(); }
+  if (confirm('¿Limpiar toda la partitura?')) { if (clearAll()) render(); scheduleSave(); }
 });
 
 document.getElementById('btn-play').addEventListener('click', playScore);
@@ -249,6 +274,7 @@ document.getElementById('file-input').addEventListener('change', e => {
       document.getElementById('mcu-sel').value = state.mcu || 'esp32';
       document.getElementById('mcu-sel').dispatchEvent(new Event('change'));
       render();
+      scheduleSave(); 
     } catch { alert('Error al cargar el archivo.'); }
   };
   reader.readAsText(file);
@@ -296,7 +322,7 @@ document.querySelectorAll('.tab[data-tab]').forEach(tab => {
   });
 });
 
-document.getElementById('bpm-prop').addEventListener('change', e => {
+document.getElementById('bpm').addEventListener('change', e => {
   state.bpm = parseInt(e.target.value) || 120;
 });
 

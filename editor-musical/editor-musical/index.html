@@ -247,6 +247,33 @@
 <script>
   const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
   if (prefersDark) document.documentElement.setAttribute('data-theme', 'dark');
+
+  const recovered = loadFromLocalStorage();
+  if (recovered) {
+    const titleEl = document.getElementById('title-input');
+    const z2El    = document.getElementById('z2-val');
+    const bpmEl   = document.getElementById('bpm');
+    const tsEl    = document.getElementById('time-sig-sel');
+    const mcuEl   = document.getElementById('mcu-sel');
+
+    if (titleEl) titleEl.value = state.title;
+    if (z2El)    z2El.value    = state.z2;
+    if (bpmEl)   bpmEl.value   = state.bpm;
+    if (tsEl) {
+      const tsVal = `${state.timeSignature.num}/${state.timeSignature.den}`;
+      if ([...tsEl.options].some(o => o.value === tsVal)) tsEl.value = tsVal;
+    }
+    if (mcuEl) {
+      mcuEl.value = state.mcu || 'esp32';
+      const mcuKey = (state.mcu === 'atmega328p') ? 'atmega' : (state.mcu || 'esp32');
+      ['esp32', 'arduino', 'atmega'].forEach(k => {
+        const el = document.getElementById(`mcu-${k}-block`);
+        if (el) el.style.display = (k === mcuKey) ? 'flex' : 'none';
+      });
+    }
+    console.log(`Proyecto recuperado: "${state.title}" — ${state.notes.length} notas`);
+  }
+
   render();
 </script>
 

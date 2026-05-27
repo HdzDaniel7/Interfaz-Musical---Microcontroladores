@@ -180,3 +180,63 @@ function importProject(jsonStr) {
   state.currentPage   = 0;
   state.selectedNote  = -1;
 }
+
+// ══════════════════════════════════════════════════════════════
+// LOCALSTORAGE — Guardado automático
+// ══════════════════════════════════════════════════════════════
+
+const LS_KEY = 'editor-musical-proyecto';
+
+// Guarda el proyecto completo en localStorage
+function saveToLocalStorage() {
+  try {
+    const data = JSON.stringify({
+      notes:         state.notes,
+      z2:            state.z2,
+      title:         state.title,
+      bpm:           state.bpm,
+      mcu:           state.mcu,
+      timeSignature: state.timeSignature,
+    });
+    localStorage.setItem(LS_KEY, data);
+  } catch (e) {
+    // localStorage lleno o deshabilitado — ignorar silenciosamente
+    console.warn('localStorage no disponible:', e);
+  }
+}
+
+// Carga el proyecto desde localStorage si existe
+// Retorna true si encontró y cargó datos, false si no había nada
+function loadFromLocalStorage() {
+  try {
+    const raw = localStorage.getItem(LS_KEY);
+    if (!raw) return false;
+    const d = JSON.parse(raw);
+    state.notes         = d.notes         || [];
+    state.z2            = d.z2            || 5;
+    state.title         = d.title         || 'Mi_Cancion';
+    state.bpm           = d.bpm           || 120;
+    state.mcu           = d.mcu           || 'esp32';
+    state.timeSignature = d.timeSignature || { num: 4, den: 4 };
+    return true;
+  } catch (e) {
+    console.warn('Error al cargar localStorage:', e);
+    return false;
+  }
+}
+
+// Borra el proyecto guardado
+function clearLocalStorage() {
+  try { localStorage.removeItem(LS_KEY); } catch (e) {}
+}
+
+// Debounce: espera 2 segundos de inactividad antes de guardar
+// Evita escribir en localStorage en cada keystroke o nota insertada
+let _saveTimeout = null;
+
+function scheduleSave() {
+  clearTimeout(_saveTimeout);
+  _saveTimeout = setTimeout(() => {
+    saveToLocalStorage();
+  }, 2000);
+}

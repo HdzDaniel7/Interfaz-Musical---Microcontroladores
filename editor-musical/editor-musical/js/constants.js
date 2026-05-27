@@ -67,3 +67,6 @@ const ML  = 58;   // Margen izquierdo (px)
 const MR  = 18;   // Margen derecho (px)
 const RPP = 4;    // Filas de pentagrama por página
 const RH  = 115;  // Altura de cada fila de pentagrama (px)
+
+const canvas = document.getElementById('score-canvas');
+const ctx    = canvas.getContext('2d');
