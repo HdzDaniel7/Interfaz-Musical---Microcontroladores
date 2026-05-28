@@ -5,7 +5,13 @@
 let isPlaying     = false;
 let playAudioCtx  = null;
 let activeNoteIdx = -1;
-const _noteTimers = [];   // guardamos los setTimeout para cancelarlos con stop
+let activeGain    = null;
+let currentVolume = 0.07;
+const _noteTimers = [];
+
+function getVolume() {
+  return currentVolume;
+}
 
 function playScore() {
   if (isPlaying || !state.notes.length) return;
@@ -20,27 +26,29 @@ function playScore() {
 
   playAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
 
-  const osc  = playAudioCtx.createOscillator();
-  const gain = playAudioCtx.createGain();
+  const osc        = playAudioCtx.createOscillator();
+  const gain       = playAudioCtx.createGain();   // articulación (0/1)
+  const masterGain = playAudioCtx.createGain();   // volumen real
+  activeGain       = masterGain;                  // ← apunta al master, no al gain
 
   osc.connect(gain);
-  gain.connect(playAudioCtx.destination);
-  osc.type        = 'square';
-  gain.gain.value = 0.07;
+  gain.connect(masterGain);
+  masterGain.connect(playAudioCtx.destination);   // ← solo una salida, sin bypass
+
+  osc.type              = 'square';
+  gain.gain.value       = 1;
+  masterGain.gain.value = getVolume();
   osc.start();
 
   const startTime = playAudioCtx.currentTime;
-  let t           = startTime;  // t = tiempo absoluto en el AudioContext
+  let t           = startTime;
 
   state.notes.forEach((n, idx) => {
     const baseDur = DUR_MS[n.dur] * msToSec;
     const dur     = n.dotted ? baseDur * 1.5 : baseDur;
 
-    // msFromNow = tiempo en ms desde AHORA hasta que empieza esta nota
-    // t ya tiene el offset correcto acumulado antes de sumar dur
     const msFromNow = (t - startTime) * 1000;
 
-    // Programar resaltado visual en el momento exacto de la nota
     const timer = setTimeout(() => {
       if (!isPlaying) return;
       activeNoteIdx = idx;
@@ -50,6 +58,7 @@ function playScore() {
 
     if (n.rest) {
       gain.gain.setValueAtTime(0, t);
+      gain.gain.setValueAtTime(1, t + dur);
     } else {
       let baseName, octaveOff;
       if (n.note.endsWith('M'))      { baseName = n.note.slice(0, -1); octaveOff =  1; }
@@ -60,15 +69,14 @@ function playScore() {
       const freq     = noteFreq(enumName, state.z2, octaveOff);
 
       osc.frequency.setValueAtTime(freq, t);
-      gain.gain.setValueAtTime(0.07, t);
-      // Apagar 5% antes del fin para articular la nota
+      gain.gain.setValueAtTime(1, t);
       gain.gain.setValueAtTime(0, t + dur * 0.95);
+      gain.gain.setValueAtTime(1, t + dur);
     }
 
     t += dur;
   });
 
-  // Programar limpieza al terminar
   const totalMs = (t - startTime) * 1000;
   const endTimer = setTimeout(() => {
     isPlaying     = false;
@@ -86,7 +94,6 @@ function playScore() {
 }
 
 function stopScore() {
-  // Cancelar todos los setTimeout pendientes
   _noteTimers.forEach(id => clearTimeout(id));
   _noteTimers.length = 0;
 
@@ -97,5 +104,20 @@ function stopScore() {
 
   isPlaying     = false;
   activeNoteIdx = -1;
+  activeGain    = null;
   render();
 }
+
+document.addEventListener('DOMContentLoaded', () => {
+  const slider = document.getElementById('volume-slider');
+  const label  = document.getElementById('volume-label');
+  if (!slider || !label) return;
+
+  slider.addEventListener('input', () => {
+    currentVolume = parseFloat(slider.value) / 1000;
+    label.textContent = slider.value + '%';
+    if (activeGain && playAudioCtx) {
+      activeGain.gain.setValueAtTime(currentVolume, playAudioCtx.currentTime);
+    }
+  });
+});
