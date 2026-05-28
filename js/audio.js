@@ -2,10 +2,10 @@
    audio.js — Reproducción con Web Audio API
    ============================================================ */
 
-let isPlaying    = false;
-let playAudioCtx = null;
-
-let activeNoteIdx = -1; // -1 = ninguna activa
+let isPlaying     = false;
+let playAudioCtx  = null;
+let activeNoteIdx = -1;
+const _noteTimers = [];   // guardamos los setTimeout para cancelarlos con stop
 
 function playScore() {
   if (isPlaying || !state.notes.length) return;
@@ -14,8 +14,10 @@ function playScore() {
   const beatSec = 60 / bpm;
   const msToSec = beatSec / 400;
 
-  isPlaying    = true;
+  isPlaying     = true;
   activeNoteIdx = -1;
+  _noteTimers.length = 0;
+
   playAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
 
   const osc  = playAudioCtx.createOscillator();
@@ -27,21 +29,24 @@ function playScore() {
   gain.gain.value = 0.07;
   osc.start();
 
-  let t = playAudioCtx.currentTime;
+  const startTime = playAudioCtx.currentTime;
+  let t           = startTime;  // t = tiempo absoluto en el AudioContext
 
   state.notes.forEach((n, idx) => {
     const baseDur = DUR_MS[n.dur] * msToSec;
     const dur     = n.dotted ? baseDur * 1.5 : baseDur;
 
-    // Calcular cuántos ms desde ahora empieza esta nota
-    const msFromNow = (t - playAudioCtx.currentTime) * 1000;
+    // msFromNow = tiempo en ms desde AHORA hasta que empieza esta nota
+    // t ya tiene el offset correcto acumulado antes de sumar dur
+    const msFromNow = (t - startTime) * 1000;
 
-    // Programar el resaltado exactamente cuando empiece la nota
-    setTimeout(() => {
+    // Programar resaltado visual en el momento exacto de la nota
+    const timer = setTimeout(() => {
       if (!isPlaying) return;
       activeNoteIdx = idx;
       render();
     }, msFromNow);
+    _noteTimers.push(timer);
 
     if (n.rest) {
       gain.gain.setValueAtTime(0, t);
@@ -56,29 +61,41 @@ function playScore() {
 
       osc.frequency.setValueAtTime(freq, t);
       gain.gain.setValueAtTime(0.07, t);
-      gain.gain.setValueAtTime(0, t + dur * 0.88);
+      // Apagar 5% antes del fin para articular la nota
+      gain.gain.setValueAtTime(0, t + dur * 0.95);
     }
 
     t += dur;
   });
 
-  osc.stop(t + 0.01);
+  // Programar limpieza al terminar
+  const totalMs = (t - startTime) * 1000;
+  const endTimer = setTimeout(() => {
+    isPlaying     = false;
+    activeNoteIdx = -1;
+    render();
+  }, totalMs + 100);
+  _noteTimers.push(endTimer);
+
+  osc.stop(t + 0.05);
   osc.onended = () => {
-    isPlaying = false;
-    // Opción B: mantener última nota resaltada → no tocar activeNoteIdx
-    // Opción A: limpiar → descomentar la línea siguiente:
+    isPlaying     = false;
     activeNoteIdx = -1;
     render();
   };
 }
 
 function stopScore() {
+  // Cancelar todos los setTimeout pendientes
+  _noteTimers.forEach(id => clearTimeout(id));
+  _noteTimers.length = 0;
+
   if (playAudioCtx) {
     try { playAudioCtx.close(); } catch (e) {}
     playAudioCtx = null;
   }
+
   isPlaying     = false;
-  // Opción B: mantener → no tocar activeNoteIdx
-  // Opción A: limpiar → activeNoteIdx = -1;
+  activeNoteIdx = -1;
   render();
 }

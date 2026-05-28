@@ -70,3 +70,19 @@ const RH  = 115;  // Altura de cada fila de pentagrama (px)
 
 const canvas = document.getElementById('score-canvas');
 const ctx    = canvas.getContext('2d');
+
+// ── Función de frecuencia para Web Audio API ──────────────────
+// Equivalente a nota_freq() del firmware
+// DO0 = 16.3516 Hz, misma referencia que el microcontrolador
+function noteFreq(enumName, z2val, octaveOff) {
+  const semi = SEMITONE_IDX[enumName] ?? 0;
+  return 16.3516 * Math.pow(2, ((z2val * 12) + semi + ((octaveOff || 0) * 12)) / 12);
+}
+
+// ── Traducción nota+accidental → nombre del enum ─────────────
+// Usada por audio.js y midi.js
+function codeNoteName(baseName, accidental) {
+  if (accidental === 'sharp') return SHARP_NAME[baseName]    || baseName;
+  if (accidental === 'flat')  return FLAT_TO_SHARP[baseName] || baseName;
+  return baseName;
+}
