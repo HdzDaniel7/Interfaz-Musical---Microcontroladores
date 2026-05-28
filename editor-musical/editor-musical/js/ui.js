@@ -290,6 +290,8 @@ document.getElementById('btn-export').addEventListener('click', () => {
   a.click();
 });
 
+document.getElementById('btn-export-midi').addEventListener('click', exportMidi);
+
 document.getElementById('btn-copy').addEventListener('click', async () => {
   try {
     await navigator.clipboard.writeText(document.getElementById('code-output').textContent);
