@@ -258,6 +258,12 @@ function transposeSelected(delta) {
   afterNotesChanged();
 }
 
+// Reproduce desde la nota seleccionada (o desde el inicio si no hay)
+function startPlayback() {
+  playScore(state.selectedNote >= 0 ? state.selectedNote : 0);
+  render();
+}
+
 function moveSelection(delta) {
   if (!state.notes.length) return;
   let i = state.selectedNote;
@@ -473,7 +479,7 @@ function bindActions() {
   $('btn-delete').addEventListener('click', doDelete);
   $('btn-clear').addEventListener('click', doClearAll);
 
-  $('btn-play').addEventListener('click', () => { playScore(); render(); });
+  $('btn-play').addEventListener('click', startPlayback);
   $('btn-stop').addEventListener('click', stopScore);
 
   $('btn-save').addEventListener('click', () => {
@@ -599,7 +605,7 @@ function bindKeyboard() {
         break;
       case ' ':
         e.preventDefault();
-        isPlaying() ? stopScore() : (playScore(), render());
+        isPlaying() ? stopScore() : startPlayback();
         break;
       case 'Escape':
         state.selectedNote = -1;

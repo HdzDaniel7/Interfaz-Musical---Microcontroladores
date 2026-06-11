@@ -67,9 +67,10 @@ export function previewNote(noteName, accidental, durMs = 150) {
   } catch (e) { /* audio no disponible — ignorar */ }
 }
 
-// ── Reproducción de la partitura completa ─────────────────────
-export function playScore() {
+// ── Reproducción de la partitura (opcionalmente desde un índice) ──
+export function playScore(fromIdx = 0) {
   if (_playing || !state.notes.length) return;
+  if (fromIdx < 0 || fromIdx >= state.notes.length) fromIdx = 0;
 
   const ctx     = ensureCtx();
   const beatSec = 60 / (state.bpm || 120);
@@ -95,6 +96,7 @@ export function playScore() {
   let t = t0;
 
   state.notes.forEach((n, idx) => {
+    if (idx < fromIdx) return; // reproducir desde la nota seleccionada
     const dur = noteDurationBeats(n) * beatSec;
 
     if (n.rest) {
