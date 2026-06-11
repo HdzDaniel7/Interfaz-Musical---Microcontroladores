@@ -9,10 +9,10 @@ import {
 import {
   NOTE_DISPLAY, NOTE_SLOT, SLOT_MIN, SLOT_MAX, SLOT_TO_NOTE, Z2_MIN, Z2_MAX,
 } from './constants.js';
-import { analyzeMeasures, availableDurations, fitsInCurrentMeasure } from './music.js';
+import { analyzeMeasures, availableDurations, fitsAtIndex } from './music.js';
 import {
   canvas, render, requestRender, setCursor, clearCursor,
-  getRow, yToNote, noteAt, onAfterRender, invalidateThemeCache,
+  getRow, yToNote, noteAt, insertionIndexAt, onAfterRender, invalidateThemeCache,
 } from './renderer.js';
 import { playScore, stopScore, setVolume, previewNote, isPlaying } from './audio.js';
 import { exportMidi } from './midi.js';
@@ -170,10 +170,11 @@ function updateStatus() {
 function updateToolbarAvailability() {
   const avail = availableDurations();
 
+  // Atenuado = no cabe al FINAL de la partitura; sigue siendo
+  // clicable porque puede caber en una inserción a media pieza.
   document.querySelectorAll('.tool-btn[data-dur]').forEach(btn => {
     const key = state.activeTool.dotted ? btn.dataset.dur + '_dot' : btn.dataset.dur;
     const ok  = avail[key] !== false;
-    btn.disabled = !ok;
     btn.classList.toggle('unavailable', !ok);
   });
 
@@ -302,7 +303,8 @@ function bindCanvas() {
     if (row < 0) { render(); return; }
 
     const t = state.activeTool;
-    if (!fitsInCurrentMeasure(t.dur, t.dotted)) {
+    const insertIdx = insertionIndexAt(cx, cy);
+    if (!fitsAtIndex(insertIdx, t.dur, t.dotted)) {
       showToast('Esa figura no cabe en el compás actual', { type: 'warn', duration: 2000 });
       render();
       return;
@@ -316,8 +318,8 @@ function bindCanvas() {
       rest:       t.rest,
       accidental: t.rest ? 'none' : state.activeAccidental,
     };
-    state.notes.push(nn);
-    state.selectedNote = state.notes.length - 1;
+    state.notes.splice(insertIdx, 0, nn);
+    state.selectedNote = insertIdx;
     if (!nn.rest) previewNote(nn.note, nn.accidental);
     afterNotesChanged();
   });

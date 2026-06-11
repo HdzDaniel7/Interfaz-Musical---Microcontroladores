@@ -129,6 +129,15 @@ export function fitsInCurrentMeasure(dur, dotted) {
   return newBeats <= capacity - used + 0.001;
 }
 
+// ── ¿Se puede insertar la figura en el índice dado? ──────────
+// Al final: chequeo estricto del compás abierto. En medio: se
+// permite siempre — la música refluye y los compases incompletos
+// quedan marcados en ámbar para guiar al usuario.
+export function fitsAtIndex(idx, dur, dotted) {
+  if (idx >= state.notes.length) return fitsInCurrentMeasure(dur, dotted);
+  return true;
+}
+
 // ── Duraciones disponibles para el compás actual ─────────────
 // Devuelve { TT: bool, …, TT_dot: bool, … }
 export function availableDurations() {

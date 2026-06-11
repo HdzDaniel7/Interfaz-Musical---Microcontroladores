@@ -8,7 +8,7 @@ import {
 } from './constants.js';
 import { state } from './state.js';
 import {
-  beatsPerMeasure, noteDurationBeats, analyzeMeasures, fitsInCurrentMeasure,
+  beatsPerMeasure, noteDurationBeats, analyzeMeasures, fitsAtIndex,
 } from './music.js';
 
 export const canvas = document.getElementById('score-canvas');
@@ -256,10 +256,10 @@ function drawStaff() {
 }
 
 // ── Dibuja una nota (o silencio) ──────────────────────────────
-function drawNote(n, x, row, { selected = false, isActive = false, ghost = false } = {}) {
+function drawNote(n, x, row, { selected = false, isActive = false, ghost = false, fits = true } = {}) {
   const noteColor = ghost
-    ? (fitsInCurrentMeasure(n.dur, n.dotted) ? (cssVar('--accent') || '#5B6CFF')
-                                             : (cssVar('--danger') || '#E5484D'))
+    ? (fits ? (cssVar('--accent') || '#5B6CFF')
+            : (cssVar('--danger') || '#E5484D'))
     : isActive ? (cssVar('--note-active') || '#FF8A3D')
     : selected ? cssVar('--note-selected')
     : (n.rest ? cssVar('--note-rest') : cssVar('--note-normal'));
@@ -380,9 +380,39 @@ function drawGhost(layoutItems, rowOffset) {
     accidental: t.rest ? 'none' : state.activeAccidental,
   };
 
+  // Punto de inserción: ¿cabe ahí? + caret si es en medio
+  const insertIdx = insertionIndexFromLayout(layoutItems, cursorX, cursorY, rowOffset);
+  const fits      = fitsAtIndex(insertIdx, t.dur, t.dotted);
+
+  if (insertIdx < state.notes.length) {
+    const target = layoutItems.find(it => it.noteIdx === insertIdx);
+    if (target) {
+      const pageRow = target.row - rowOffset;
+      if (pageRow >= 0 && pageRow < RPP) {
+        const cxLine = target.x - target.w / 2;
+        ctx.save();
+        ctx.strokeStyle = cssVar('--accent') || '#5B6CFF';
+        ctx.lineWidth   = 2;
+        ctx.globalAlpha = 0.65;
+        ctx.beginPath();
+        ctx.moveTo(cxLine, sY(pageRow, 0) - 10);
+        ctx.lineTo(cxLine, sY(pageRow, 4) + 10);
+        ctx.stroke();
+        // Pequeñas alas del caret
+        ctx.beginPath();
+        ctx.moveTo(cxLine - 4, sY(pageRow, 0) - 10);
+        ctx.lineTo(cxLine + 4, sY(pageRow, 0) - 10);
+        ctx.moveTo(cxLine - 4, sY(pageRow, 4) + 10);
+        ctx.lineTo(cxLine + 4, sY(pageRow, 4) + 10);
+        ctx.stroke();
+        ctx.restore();
+      }
+    }
+  }
+
   ctx.save();
   ctx.globalAlpha = 0.38;
-  drawNote(ghostNote, cursorX, cursorRow, { ghost: true });
+  drawNote(ghostNote, cursorX, cursorRow, { ghost: true, fits });
   ctx.restore();
 
   // Etiqueta junto al fantasma
@@ -444,6 +474,25 @@ function noteAtFromLayout(items, cx, cy, rowOffset) {
 export function noteAt(cx, cy) {
   const { items } = buildLayout();
   return noteAtFromLayout(items, cx, cy, state.currentPage * RPP);
+}
+
+// ── Índice de inserción para un punto del canvas ──────────────
+// Devuelve el índice de la primera nota que queda "después" del
+// punto (misma fila a la derecha, o cualquier fila posterior).
+// Si el punto cae después de todas, devuelve notes.length (append).
+function insertionIndexFromLayout(items, cx, cy, rowOffset) {
+  const row = getRow(cy);
+  if (row < 0) return state.notes.length;
+  const absRow = row + rowOffset;
+  for (const it of items) {
+    if (it.row > absRow || (it.row === absRow && it.x >= cx)) return it.noteIdx;
+  }
+  return state.notes.length;
+}
+
+export function insertionIndexAt(cx, cy) {
+  const { items } = buildLayout();
+  return insertionIndexFromLayout(items, cx, cy, state.currentPage * RPP);
 }
 
 // ── Render principal ──────────────────────────────────────────
