@@ -4,7 +4,7 @@
    ============================================================ */
 
 import { state } from './state.js';
-import { resolvePitch } from './music.js';
+import { resolvePitch, expandedNoteIndices } from './music.js';
 import { DUR_BEATS, NOTE_SLOT, Z2_MIN, Z2_MAX } from './constants.js';
 import { safeFileName } from './codegen/common.js';
 
@@ -98,7 +98,9 @@ export function exportMidi() {
   const events = [];
   let currentTick = 0;
 
-  notes.forEach(n => {
+  // Orden de reproducción con repeticiones expandidas
+  expandedNoteIndices().forEach(idx => {
+    const n     = notes[idx];
     const ticks = noteTicks(n.dur, n.dotted);
 
     if (!n.rest) {

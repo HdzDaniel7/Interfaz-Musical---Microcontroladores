@@ -13,8 +13,8 @@ export default {
   label:     'ATmega328P',
   extension: '.c',
 
-  generate({ title, z2, bpm, timeSignature, notes, measures, extraCode, markers }) {
-    const body = buildLoopBody(notes, measures, { markers, indent: '\t\t' });
+  generate({ title, z2, bpm, timeSignature, notes, measures, repeats, extraCode, markers }) {
+    const body = buildLoopBody(notes, measures, { markers, indent: '\t\t', repeats });
 
     return `\
 /*

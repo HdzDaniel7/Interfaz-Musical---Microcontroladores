@@ -129,6 +129,48 @@ export function fitsInCurrentMeasure(dur, dotted) {
   return newBeats <= capacity - used + 0.001;
 }
 
+// ══════════════════════════════════════════════════════════════
+// REPETICIONES
+// ══════════════════════════════════════════════════════════════
+
+// Repeticiones válidas para un total de compases dado:
+// dentro de rango, ordenadas y sin solapamientos.
+export function sanitizedRepeats(measureCount) {
+  const valid = (state.repeats || [])
+    .filter(r => r.from >= 0 && r.to >= r.from && r.to < measureCount && r.times >= 2)
+    .sort((a, b) => a.from - b.from);
+  const out = [];
+  let lastEnd = -1;
+  for (const r of valid) {
+    if (r.from > lastEnd) { out.push(r); lastEnd = r.to; }
+  }
+  return out;
+}
+
+// Índices de nota en orden de reproducción, con las repeticiones
+// expandidas. Lo usan el audio y la exportación MIDI.
+export function expandedNoteIndices() {
+  const measures = analyzeMeasures();
+  const reps     = sanitizedRepeats(measures.length);
+  const out      = [];
+  let mi = 0;
+  while (mi < measures.length) {
+    const rep = reps.find(r => r.from === mi);
+    if (rep) {
+      for (let t = 0; t < rep.times; t++) {
+        for (let m = rep.from; m <= rep.to; m++) {
+          for (let i = measures[m].startIdx; i < measures[m].endIdx; i++) out.push(i);
+        }
+      }
+      mi = rep.to + 1;
+    } else {
+      for (let i = measures[mi].startIdx; i < measures[mi].endIdx; i++) out.push(i);
+      mi++;
+    }
+  }
+  return out;
+}
+
 // ── ¿Se puede insertar la figura en el índice dado? ──────────
 // Al final: chequeo estricto del compás abierto. En medio: se
 // permite siempre — la música refluye y los compases incompletos

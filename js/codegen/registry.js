@@ -10,7 +10,7 @@ import arduinoUno from './templates/arduino-uno.js';
 import atmega328p from './templates/atmega328p.js';
 
 import { state } from '../state.js';
-import { analyzeMeasures } from '../music.js';
+import { analyzeMeasures, sanitizedRepeats } from '../music.js';
 import { stripMarkers, safeFileName } from './common.js';
 
 export const TEMPLATES = [esp32, arduinoUno, atmega328p];
@@ -23,14 +23,16 @@ export function getTemplate(id) {
 // markers=true inserta marcadores invisibles para que el panel
 // pueda resaltar la línea de la nota seleccionada.
 export function generateCode({ markers = false } = {}) {
-  const tpl = getTemplate(state.mcu);
+  const tpl      = getTemplate(state.mcu);
+  const measures = analyzeMeasures();
   const code = tpl.generate({
     title:         state.title,
     z2:            state.z2,
     bpm:           state.bpm,
     timeSignature: state.timeSignature,
     notes:         state.notes,
-    measures:      analyzeMeasures(),
+    measures,
+    repeats:       sanitizedRepeats(measures.length),
     extraCode:     state.extraCode[tpl.id] || '',
     markers,
   });

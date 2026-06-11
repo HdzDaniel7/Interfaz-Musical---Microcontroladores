@@ -203,6 +203,21 @@
           </section>
 
           <section class="prop-section">
+            <h3 class="section-title">Repeticiones</h3>
+            <div class="repeat-form">
+              <span class="field-label">C.</span>
+              <input class="num-input rep-input" type="number" id="rep-from" min="1" value="1" title="Desde compás">
+              <span class="field-label">a</span>
+              <input class="num-input rep-input" type="number" id="rep-to" min="1" value="2" title="Hasta compás">
+              <span class="field-label">×</span>
+              <input class="num-input rep-input" type="number" id="rep-times" min="2" max="16" value="2" title="Veces">
+              <button class="copy-btn" id="rep-add">Agregar</button>
+            </div>
+            <div id="rep-list" class="repeat-list"></div>
+            <p class="note-small">Cada repetición se genera como un bucle <code>for</code> en el firmware (ahorra memoria flash).</p>
+          </section>
+
+          <section class="prop-section">
             <h3 class="section-title">Código adicional · <span id="extra-code-mcu">ESP32</span></h3>
             <textarea class="mcu-textarea" id="extra-code"
               placeholder="Código C propio (funciones, defines...). Se inserta en la plantilla antes de setup()/main()."></textarea>

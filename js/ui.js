@@ -9,7 +9,9 @@ import {
 import {
   NOTE_DISPLAY, NOTE_SLOT, SLOT_MIN, SLOT_MAX, SLOT_TO_NOTE, Z2_MIN, Z2_MAX,
 } from './constants.js';
-import { analyzeMeasures, availableDurations, fitsAtIndex } from './music.js';
+import {
+  analyzeMeasures, availableDurations, fitsAtIndex, sanitizedRepeats,
+} from './music.js';
 import {
   canvas, render, requestRender, setCursor, clearCursor,
   getRow, yToNote, noteAt, insertionIndexAt, onAfterRender, invalidateThemeCache,
@@ -164,7 +166,42 @@ function updateStatus() {
   $('prop-complete').textContent =
     measures.filter(m => !m.overflow && !m.underflow).length;
 
+  updateRepeatList(measures.length);
   updateToolbarAvailability();
+}
+
+// ── Lista de repeticiones (solo se reconstruye si cambió) ─────
+let _repListSig = '';
+
+function updateRepeatList(measureCount) {
+  const sig = JSON.stringify(state.repeats) + '|' + measureCount;
+  if (sig === _repListSig) return;
+  _repListSig = sig;
+
+  const list = $('rep-list');
+  list.innerHTML = '';
+  const valid = sanitizedRepeats(measureCount);
+
+  state.repeats.forEach((r, i) => {
+    const ok = valid.includes(r);
+    const item = document.createElement('div');
+    item.className = 'repeat-item';
+    item.innerHTML =
+      `<span>Compás <strong>${r.from + 1}–${r.to + 1}</strong> × <strong>${r.times}</strong>` +
+      `${ok ? '' : ' <em>(fuera de rango)</em>'}</span>`;
+    const del = document.createElement('button');
+    del.className = 'repeat-del';
+    del.title = 'Quitar repetición';
+    del.textContent = '✕';
+    del.addEventListener('click', () => {
+      state.repeats.splice(i, 1);
+      markCodeDirty();
+      render();
+      scheduleSave();
+    });
+    item.appendChild(del);
+    list.appendChild(item);
+  });
 }
 
 // Deshabilitar duraciones que no caben en el compás actual
@@ -610,6 +647,30 @@ function bindActions() {
       $('tab-code').style.display  = tab.dataset.tab === 'code'  ? 'flex' : 'none';
       $('tab-props').style.display = tab.dataset.tab === 'props' ? 'flex' : 'none';
     });
+  });
+
+  // ── Repeticiones ──────────────────────────────────────────
+  $('rep-add').addEventListener('click', () => {
+    const from  = parseInt($('rep-from').value, 10) - 1;
+    const to    = parseInt($('rep-to').value, 10) - 1;
+    const times = parseInt($('rep-times').value, 10);
+    const count = analyzeMeasures().length;
+
+    if (isNaN(from) || isNaN(to) || isNaN(times) ||
+        from < 0 || to < from || to >= count || times < 2 || times > 16) {
+      showToast('Rango de compases o repeticiones inválido', { type: 'warn' });
+      return;
+    }
+    const overlap = sanitizedRepeats(count).some(r => !(to < r.from || from > r.to));
+    if (overlap) {
+      showToast('Ese rango se solapa con otra repetición', { type: 'warn' });
+      return;
+    }
+    state.repeats.push({ from, to, times });
+    markCodeDirty();
+    render();
+    scheduleSave();
+    showToast(`Repetición agregada: compases ${from + 1}–${to + 1} ×${times}`, { type: 'success' });
   });
 
   // Clic en una línea de código → seleccionar la nota correspondiente

@@ -9,6 +9,7 @@ import {
 import { state } from './state.js';
 import {
   beatsPerMeasure, noteDurationBeats, analyzeMeasures, fitsAtIndex,
+  sanitizedRepeats,
 } from './music.js';
 
 export const canvas = document.getElementById('score-canvas');
@@ -431,6 +432,50 @@ function drawGhost(layoutItems, rowOffset) {
   }
 }
 
+// ── Signos de repetición (║: … :║ ×N) ─────────────────────────
+function drawRepeatSigns(boxes, rowOffset) {
+  const reps = sanitizedRepeats(boxes.length);
+  if (!reps.length) return;
+
+  const color = cssVar('--accent') || '#5B6CFF';
+
+  const sign = (x, pageRow, opening) => {
+    const yTop = sY(pageRow, 0), yBot = sY(pageRow, 4);
+    const dir  = opening ? 1 : -1;
+    ctx.save();
+    ctx.strokeStyle = color;
+    ctx.fillStyle   = color;
+    // Barra gruesa + barra fina
+    ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.moveTo(x, yTop); ctx.lineTo(x, yBot); ctx.stroke();
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(x + 4 * dir, yTop); ctx.lineTo(x + 4 * dir, yBot); ctx.stroke();
+    // Dos puntos
+    ctx.beginPath(); ctx.arc(x + 8 * dir, sY(pageRow, 1) + SS / 2, 1.8, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(x + 8 * dir, sY(pageRow, 2) + SS / 2, 1.8, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  };
+
+  for (const rep of reps) {
+    const a = boxes[rep.from], b = boxes[rep.to];
+    if (!a || !b) continue;
+
+    const rowA = a.row - rowOffset, rowB = b.row - rowOffset;
+    if (rowA >= 0 && rowA < RPP) sign(a.x0 + 2, rowA, true);
+    if (rowB >= 0 && rowB < RPP) {
+      sign(b.x0 + b.w - 2, rowB, false);
+      // Etiqueta ×N sobre el final de la repetición
+      ctx.save();
+      ctx.font         = `700 11px ${cssVar('--font-sans') || 'sans-serif'}`;
+      ctx.textAlign    = 'right';
+      ctx.textBaseline = 'bottom';
+      ctx.fillStyle    = color;
+      ctx.fillText(`×${rep.times}`, b.x0 + b.w - 2, sY(rowB, 0) - 6);
+      ctx.restore();
+    }
+  }
+}
+
 // ── Cabezal de reproducción ───────────────────────────────────
 function drawPlayhead(rowOffset) {
   if (!playhead) return;
@@ -516,6 +561,7 @@ export function render() {
 
   drawMeasureBackgrounds(boxes, rowOffset);
   drawStaff();
+  drawRepeatSigns(boxes, rowOffset);
 
   for (const { note, x, row, noteIdx } of items) {
     const pageRow = row - rowOffset;

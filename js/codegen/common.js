@@ -31,18 +31,44 @@ export function noteToCode(n, indent) {
 }
 
 // ── Cuerpo del loop agrupado por compases ─────────────────────
-export function buildLoopBody(notes, measures, { markers = false, indent = '\t\t' } = {}) {
+// Los rangos en `repeats` ([{from, to, times}]) se envuelven en un
+// bucle for: las notas se escriben una sola vez y suenan ×N veces
+// (ahorra memoria flash en el microcontrolador).
+export function buildLoopBody(notes, measures, { markers = false, indent = '\t\t', repeats = [] } = {}) {
   if (!measures.length) return `${indent}// Agrega notas en el pentagrama...`;
 
-  return measures.map((m, idx) => {
+  const measureBlock = (mi, ind) => {
+    const m = measures[mi];
     const lines = [];
     for (let i = m.startIdx; i < m.endIdx; i++) {
-      let code = noteToCode(notes[i], indent);
+      let code = noteToCode(notes[i], ind);
       if (markers) code = `${MARK_OPEN}${i}${MARK_SEP}${code}${MARK_CLOSE}`;
       lines.push(code);
     }
-    return `${indent}// — Compás ${idx + 1} —\n${lines.join('\n')}`;
-  }).join('\n\n');
+    return `${ind}// — Compás ${mi + 1} —\n${lines.join('\n')}`;
+  };
+
+  const blocks = [];
+  let mi = 0, repN = 0;
+  while (mi < measures.length) {
+    const rep = repeats.find(r => r.from === mi);
+    if (rep) {
+      repN++;
+      const inner = [];
+      for (let m = rep.from; m <= rep.to; m++) inner.push(measureBlock(m, indent + '\t'));
+      blocks.push(
+        `${indent}// ═══ Repetición ×${rep.times} (compases ${rep.from + 1}–${rep.to + 1}) ═══\n` +
+        `${indent}for (uint8_t rep${repN} = 0; rep${repN} < ${rep.times}; rep${repN}++) {\n` +
+        `${inner.join('\n\n')}\n${indent}}`
+      );
+      mi = rep.to + 1;
+    } else {
+      blocks.push(measureBlock(mi, indent));
+      mi++;
+    }
+  }
+
+  return blocks.join('\n\n');
 }
 
 // ── Macros de tiempo derivadas del BPM ────────────────────────

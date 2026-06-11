@@ -5,7 +5,7 @@
    ============================================================ */
 
 import { state } from './state.js';
-import { noteFreq, noteDurationBeats } from './music.js';
+import { noteFreq, noteDurationBeats, expandedNoteIndices } from './music.js';
 import { RPP } from './constants.js';
 import {
   render, setActiveNote, setPlayhead, buildLayout,
@@ -91,12 +91,16 @@ export function playScore(fromIdx = 0) {
   masterGain.gain.value = currentVolume;
 
   // ── Programar todas las notas + construir agenda visual ────
+  // El orden expande las repeticiones (el playhead salta atrás).
+  const order    = expandedNoteIndices();
+  const startPos = fromIdx > 0 ? Math.max(0, order.indexOf(fromIdx)) : 0;
+
   const t0       = ctx.currentTime + 0.06;
   const schedule = [];
   let t = t0;
 
-  state.notes.forEach((n, idx) => {
-    if (idx < fromIdx) return; // reproducir desde la nota seleccionada
+  order.slice(startPos).forEach(idx => {
+    const n   = state.notes[idx];
     const dur = noteDurationBeats(n) * beatSec;
 
     if (n.rest) {

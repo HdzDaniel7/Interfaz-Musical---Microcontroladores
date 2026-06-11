@@ -22,6 +22,8 @@ export const state = {
   activeAccidental: 'none',
   // Código C adicional del usuario, por plantilla de MCU
   extraCode:     {},
+  // Repeticiones: [{ from, to, times }] índices de compás 0-based
+  repeats:       [],
 };
 
 // ══════════════════════════════════════════════════════════════
@@ -62,6 +64,7 @@ export function clearAll() {
   if (!state.notes.length) return false;
   pushHistory();
   state.notes = [];
+  state.repeats = [];
   state.selectedNote = -1;
   return true;
 }
@@ -127,8 +130,17 @@ function sanitizeExtraCode(raw) {
   return out;
 }
 
+function sanitizeRepeatsShape(raw) {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .filter(r => r && Number.isInteger(r.from) && Number.isInteger(r.to) && Number.isInteger(r.times))
+    .filter(r => r.from >= 0 && r.to >= r.from && r.times >= 2 && r.times <= 16)
+    .map(r => ({ from: r.from, to: r.to, times: r.times }));
+}
+
 function applyProjectData(d) {
   state.notes         = sanitizeNotes(d.notes);
+  state.repeats       = sanitizeRepeatsShape(d.repeats);
   state.z2            = clampZ2(d.z2 ?? 5);
   state.title         = typeof d.title === 'string' && d.title.trim() ? d.title : 'Mi_Cancion';
   state.bpm           = clampBpm(d.bpm ?? 120);
@@ -151,6 +163,7 @@ export function exportProject() {
     mcu:           state.mcu,
     timeSignature: state.timeSignature,
     extraCode:     state.extraCode,
+    repeats:       state.repeats,
   }, null, 2);
 }
 
