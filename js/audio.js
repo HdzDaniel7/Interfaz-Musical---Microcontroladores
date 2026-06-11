@@ -5,7 +5,9 @@
    ============================================================ */
 
 import { state } from './state.js';
-import { noteFreq, noteDurationBeats, expandedNoteIndices } from './music.js';
+import {
+  noteFreq, noteDurationBeats, expandedNoteIndices, computeTieChains,
+} from './music.js';
 import { RPP } from './constants.js';
 import {
   render, setActiveNote, setPlayhead, buildLayout,
@@ -92,28 +94,43 @@ export function playScore(fromIdx = 0) {
 
   // ── Programar todas las notas + construir agenda visual ────
   // El orden expande las repeticiones (el playhead salta atrás).
+  // Las ligaduras suman duraciones y el legato omite el corte.
   const order    = expandedNoteIndices();
   const startPos = fromIdx > 0 ? Math.max(0, order.indexOf(fromIdx)) : 0;
+  const { chains, consumed, legato } = computeTieChains();
 
   const t0       = ctx.currentTime + 0.06;
   const schedule = [];
   let t = t0;
+  let prevLegato = false;
 
   order.slice(startPos).forEach(idx => {
-    const n   = state.notes[idx];
-    const dur = noteDurationBeats(n) * beatSec;
+    if (consumed.has(idx)) return; // absorbida por una ligadura
+    const n = state.notes[idx];
+
+    const members = chains.get(idx) || [idx];
+    const dur = members.reduce((s, k) => s + noteDurationBeats(state.notes[k]), 0) * beatSec;
+    const legatoOut = legato.has(members[members.length - 1]);
 
     if (n.rest) {
       gain.gain.setValueAtTime(0, t);
+      prevLegato = false;
     } else {
       const freq  = noteFreq(n.note, n.accidental, state.z2);
-      const durOn = Math.max(dur * 0.95, 0.03);
+      const durOn = legatoOut ? dur : Math.max(dur * 0.95, 0.03);
 
       osc.frequency.setValueAtTime(freq, t);
-      gain.gain.setValueAtTime(0, t);
-      gain.gain.linearRampToValueAtTime(1, t + RAMP);
-      gain.gain.setValueAtTime(1, Math.max(t + RAMP, t + durOn - RAMP));
-      gain.gain.linearRampToValueAtTime(0, t + durOn);
+      if (prevLegato) {
+        gain.gain.setValueAtTime(1, t);          // sin re-ataque
+      } else {
+        gain.gain.setValueAtTime(0, t);
+        gain.gain.linearRampToValueAtTime(1, t + RAMP);
+      }
+      if (!legatoOut) {
+        gain.gain.setValueAtTime(1, Math.max(t + RAMP, t + durOn - RAMP));
+        gain.gain.linearRampToValueAtTime(0, t + durOn);
+      }
+      prevLegato = legatoOut;
     }
 
     schedule.push({ idx, start: t, end: t + dur });

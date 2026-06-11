@@ -98,6 +98,7 @@ function sanitizeNotes(raw) {
       dotted:     !!n.dotted,
       rest:       !!n.rest,
       accidental: VALID_ACCIDENTALS.includes(n.accidental) ? n.accidental : 'none',
+      tieToNext:  !!n.tieToNext,
     }));
 }
 

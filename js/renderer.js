@@ -432,6 +432,43 @@ function drawGhost(layoutItems, rowOffset) {
   }
 }
 
+// ── Arcos de ligadura entre notas consecutivas ────────────────
+function drawTies(items, rowOffset) {
+  ctx.save();
+  ctx.strokeStyle = cssVar('--note-label') || '#5B6CFF';
+  ctx.lineWidth   = 1.3;
+
+  for (const it of items) {
+    const n = it.note;
+    if (!n.tieToNext || n.rest) continue;
+    const next = items[it.noteIdx + 1];
+    if (!next || next.note.rest) continue;
+
+    const pageRow = it.row - rowOffset;
+    if (pageRow < 0 || pageRow >= RPP) continue;
+
+    const y1   = noteToY(n.note, pageRow);
+    const slot = NOTE_SLOT[n.note] ?? 0;
+    const up   = slot < 2; // arco por arriba para notas graves, abajo para agudas
+    const off  = up ? -8 : 10;
+
+    ctx.beginPath();
+    if (next.row === it.row) {
+      const y2  = noteToY(next.note.note, pageRow);
+      const mx  = (it.x + next.x) / 2;
+      const my  = Math.min(y1, y2) * (up ? 1 : 0) + Math.max(y1, y2) * (up ? 0 : 1) + off * 1.6;
+      ctx.moveTo(it.x + 7, y1 + off * 0.5);
+      ctx.quadraticCurveTo(mx, my, next.x - 7, y2 + off * 0.5);
+    } else {
+      // La siguiente está en otra fila: arco abierto hacia el borde
+      ctx.moveTo(it.x + 7, y1 + off * 0.5);
+      ctx.quadraticCurveTo(it.x + 18, y1 + off * 1.4, it.x + 30, y1 + off * 0.6);
+    }
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
 // ── Signos de repetición (║: … :║ ×N) ─────────────────────────
 function drawRepeatSigns(boxes, rowOffset) {
   const reps = sanitizedRepeats(boxes.length);
@@ -575,6 +612,7 @@ export function render() {
     });
   }
 
+  drawTies(items, rowOffset);
   drawGhost(items, rowOffset);
   drawPlayhead(rowOffset);
 

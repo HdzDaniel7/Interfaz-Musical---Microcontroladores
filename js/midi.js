@@ -4,7 +4,7 @@
    ============================================================ */
 
 import { state } from './state.js';
-import { resolvePitch, expandedNoteIndices } from './music.js';
+import { resolvePitch, expandedNoteIndices, computeTieChains } from './music.js';
 import { DUR_BEATS, NOTE_SLOT, Z2_MIN, Z2_MAX } from './constants.js';
 import { safeFileName } from './codegen/common.js';
 
@@ -98,16 +98,22 @@ export function exportMidi() {
   const events = [];
   let currentTick = 0;
 
-  // Orden de reproducción con repeticiones expandidas
+  // Orden de reproducción con repeticiones expandidas y ligaduras
+  const { chains, consumed, legato } = computeTieChains();
+
   expandedNoteIndices().forEach(idx => {
-    const n     = notes[idx];
-    const ticks = noteTicks(n.dur, n.dotted);
+    if (consumed.has(idx)) return;
+    const n       = notes[idx];
+    const members = chains.get(idx) || [idx];
+    const ticks   = members.reduce((s, k) => s + noteTicks(notes[k].dur, notes[k].dotted), 0);
 
     if (!n.rest) {
-      const midiNote = noteToMidi(n.note, n.accidental, z2val);
+      const midiNote  = noteToMidi(n.note, n.accidental, z2val);
+      const legatoOut = legato.has(members[members.length - 1]);
       events.push({ tick: currentTick, type: 'on', note: midiNote, vel: 80 });
-      // Note Off antes del siguiente (articulación 5%)
-      events.push({ tick: currentTick + Math.floor(ticks * 0.95), type: 'off', note: midiNote, vel: 0 });
+      // Legato: dura completo; normal: articulación 5%
+      const offAt = legatoOut ? ticks : Math.floor(ticks * 0.95);
+      events.push({ tick: currentTick + offAt, type: 'off', note: midiNote, vel: 0 });
     }
 
     currentTick += ticks;

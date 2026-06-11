@@ -318,6 +318,22 @@ function duplicateSelection() {
   if (copySelection()) pasteClipboard();
 }
 
+// Alternar ligadura hacia la siguiente nota en la selección
+function toggleTie() {
+  const idxs = selectedIndices().filter(i =>
+    state.notes[i] && !state.notes[i].rest && i < state.notes.length - 1);
+  if (!idxs.length) {
+    showToast('Selecciona una nota (no la última) para ligarla', { type: 'warn', duration: 2200 });
+    return;
+  }
+  pushHistory();
+  const allTied = idxs.every(i => state.notes[i].tieToNext);
+  for (const i of idxs) {
+    state.notes[i] = { ...state.notes[i], tieToNext: !allTied };
+  }
+  afterNotesChanged();
+}
+
 // Transponer la selección un slot arriba/abajo
 function transposeSelected(delta) {
   const idxs = selectedIndices().filter(i => state.notes[i] && !state.notes[i].rest);
@@ -588,6 +604,7 @@ function bindActions() {
   $('btn-undo').addEventListener('click', doUndo);
   $('btn-redo').addEventListener('click', doRedo);
   $('btn-delete').addEventListener('click', doDelete);
+  $('btn-tie').addEventListener('click', toggleTie);
   $('btn-clear').addEventListener('click', doClearAll);
 
   $('btn-play').addEventListener('click', startPlayback);
@@ -833,6 +850,10 @@ function bindKeyboard() {
       case 'r':
       case 'R':
         selectTool(state.activeTool.dur, !state.activeTool.rest);
+        break;
+      case 'l':
+      case 'L':
+        toggleTie();
         break;
       default:
         if (KEY_TO_DUR[e.key]) selectTool(KEY_TO_DUR[e.key], state.activeTool.rest);

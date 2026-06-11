@@ -130,6 +130,39 @@ export function fitsInCurrentMeasure(dur, dotted) {
 }
 
 // ══════════════════════════════════════════════════════════════
+// LIGADURAS
+// Una nota con tieToNext se une a la siguiente:
+//  · misma altura  → ligadura real: una sola emisión con la
+//    duración sumada (cadenas de varias notas permitidas)
+//  · distinta altura → legato: sin silencio de articulación
+// ══════════════════════════════════════════════════════════════
+
+export function computeTieChains(notes = state.notes) {
+  const chains   = new Map(); // índice cabeza → [cabeza, ...miembros]
+  const consumed = new Set(); // miembros absorbidos por una cadena
+  const legato   = new Set(); // índices cuya transición siguiente es legato
+  for (let i = 0; i < notes.length; i++) {
+    if (consumed.has(i) || notes[i].rest) continue;
+    const members = [i];
+    let j = i;
+    while (notes[j].tieToNext && notes[j + 1] && !notes[j + 1].rest) {
+      const a = resolvePitch(notes[j].note, notes[j].accidental);
+      const b = resolvePitch(notes[j + 1].note, notes[j + 1].accidental);
+      if (a.enumName === b.enumName && a.octave === b.octave) {
+        consumed.add(j + 1);
+        members.push(j + 1);
+        j++;
+      } else {
+        legato.add(j); // distinta altura → transición ligada
+        break;
+      }
+    }
+    if (members.length > 1) chains.set(i, members);
+  }
+  return { chains, consumed, legato };
+}
+
+// ══════════════════════════════════════════════════════════════
 // REPETICIONES
 // ══════════════════════════════════════════════════════════════
 
