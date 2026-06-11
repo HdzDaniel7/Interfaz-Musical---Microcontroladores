@@ -14,6 +14,8 @@ Aplicación web 100 % estática — sin build, sin frameworks, sin npm. Escribes
 con el mouse, las escuchas en el navegador y exportas un `.ino` / `.c` que suena
 idéntico en el hardware.
 
+### 🌐 [▶ Pruébalo en vivo](https://hdzdaniel7.github.io/Interfaz-Musical---Microcontroladores/) — y pulsa el botón ✨ para cargar el Himno de la Alegría
+
 ![Editor en tema oscuro: partitura con playhead y código generado](docs/captura-oscuro.png)
 
 <details>

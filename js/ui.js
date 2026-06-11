@@ -17,6 +17,7 @@ import {
 import { playScore, stopScore, setVolume, previewNote, isPlaying } from './audio.js';
 import { exportMidi } from './midi.js';
 import { TEMPLATES, getTemplate, generateCode, currentFileName } from './codegen/registry.js';
+import { DEMO_PROJECT } from './demo.js';
 
 const $ = id => document.getElementById(id);
 
@@ -489,6 +490,20 @@ function bindActions() {
   });
 
   $('btn-load').addEventListener('click', () => $('file-input').click());
+
+  $('btn-demo').addEventListener('click', () => {
+    importProject(JSON.stringify(DEMO_PROJECT));
+    syncControlsFromState();
+    markCodeDirty();
+    render();
+    scheduleSave();
+    showToast('Demo cargada: Himno de la Alegría', {
+      type: 'success',
+      duration: 4500,
+      actionLabel: 'Deshacer',
+      onAction: () => { if (undo()) { markCodeDirty(); render(); saveNow(); } },
+    });
+  });
 
   $('file-input').addEventListener('change', e => {
     const file = e.target.files[0];
