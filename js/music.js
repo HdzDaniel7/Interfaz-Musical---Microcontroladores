@@ -18,14 +18,33 @@ export function parseNoteName(name) {
   return { base: name, octave: 0 };
 }
 
+// ── Armadura de tonalidad ─────────────────────────────────────
+// state.keySignature: nº de sostenidos (+) o bemoles (−), 0 = Do M.
+// Orden estándar de alteraciones:
+const SHARP_ORDER = ['FA', 'DO', 'SOL', 'RE', 'LA', 'MI', 'SI'];
+const FLAT_ORDER  = ['SI', 'MI', 'LA', 'RE', 'SOL', 'DO', 'FA'];
+
+// Ajuste (−1/0/+1) que la armadura aplica a una nota natural
+export function keyAdjust(base, ks = state.keySignature) {
+  if (!ks) return 0;
+  if (ks > 0) return SHARP_ORDER.slice(0, ks).includes(base) ? 1 : 0;
+  return FLAT_ORDER.slice(0, -ks).includes(base) ? -1 : 0;
+}
+
 // ── Resolución de altura ──────────────────────────────────────
 // Convierte nota + accidental a { enumName, pc, octave } trabajando
 // en semitonos absolutos. Así los enarmónicos salen siempre bien:
 //   FA♯  → FAs        MI♯ → FA         SI♯ → DO (octava +1)
 //   DO♭  → SI (octava -1)              SOL♭ → FAs
-export function resolvePitch(noteName, accidental) {
+// Accidental:
+//   'none'    → sigue la armadura     'natural' → fuerza natural
+//   'sharp' / 'flat' → explícitos (anulan la armadura)
+export function resolvePitch(noteName, accidental, ks = state.keySignature) {
   const { base, octave } = parseNoteName(noteName);
-  const acc   = accidental === 'sharp' ? 1 : accidental === 'flat' ? -1 : 0;
+  const acc = accidental === 'sharp' ? 1
+            : accidental === 'flat' ? -1
+            : accidental === 'natural' ? 0
+            : keyAdjust(base, ks);
   const total = (PITCH_CLASS[base] ?? 0) + acc + octave * 12;
   const pc    = ((total % 12) + 12) % 12;
   const oct   = Math.floor(total / 12);

@@ -43,6 +43,21 @@
         </select>
       </label>
 
+      <label class="field-group" title="Armadura de tonalidad">
+        <span class="field-label">Tono</span>
+        <select class="sel-input" id="key-sig-sel">
+          <option value="0" selected>Do M</option>
+          <option value="1">Sol M · 1♯</option>
+          <option value="2">Re M · 2♯</option>
+          <option value="3">La M · 3♯</option>
+          <option value="4">Mi M · 4♯</option>
+          <option value="-1">Fa M · 1♭</option>
+          <option value="-2">Si♭ M · 2♭</option>
+          <option value="-3">Mi♭ M · 3♭</option>
+          <option value="-4">La♭ M · 4♭</option>
+        </select>
+      </label>
+
       <label class="field-group" title="Tempo en pulsos por minuto">
         <span class="field-label">BPM</span>
         <input class="num-input" type="number" id="bpm" value="120" min="40" max="300">
@@ -75,9 +90,10 @@
 
       <div class="tool-group" role="group" aria-label="Accidentales">
         <span class="group-label">Acc.</span>
-        <button class="acc-btn active" id="acc-none"  data-acc="none"  title="Natural">♮</button>
-        <button class="acc-btn"        id="acc-sharp" data-acc="sharp" title="Sostenido">♯</button>
-        <button class="acc-btn"        id="acc-flat"  data-acc="flat"  title="Bemol">♭</button>
+        <button class="acc-btn active" id="acc-none"    data-acc="none"    title="Automático: sigue la armadura">·</button>
+        <button class="acc-btn"        id="acc-natural" data-acc="natural" title="Natural (anula la armadura)">♮</button>
+        <button class="acc-btn"        id="acc-sharp"   data-acc="sharp"   title="Sostenido">♯</button>
+        <button class="acc-btn"        id="acc-flat"    data-acc="flat"    title="Bemol">♭</button>
       </div>
     </div>
 

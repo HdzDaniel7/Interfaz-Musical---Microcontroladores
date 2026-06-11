@@ -102,11 +102,18 @@ export function getRow(y) {
 //             underflow, overflow }]
 // ══════════════════════════════════════════════════════════════
 
+// Espacio horizontal que ocupa la armadura tras la clave
+function keySigPad() {
+  const ks = Math.abs(state.keySignature || 0);
+  return ks ? ks * 8 + 6 : 0;
+}
+
 export function buildLayout() {
   const measures  = analyzeMeasures();
   const capacity  = beatsPerMeasure();
   const measurePx = capacity * NW;
-  const rowW      = W - ML - MR;
+  const pad       = keySigPad();
+  const rowW      = W - ML - pad - MR;
 
   const items = [];
   const boxes = [];
@@ -138,7 +145,7 @@ export function buildLayout() {
       const xRel  = mStartX + (beatsInMeasure / capacity) * measurePx + noteW / 2;
 
       items.push({
-        note: n, x: ML + xRel, w: noteW, row: curRow,
+        note: n, x: ML + pad + xRel, w: noteW, row: curRow,
         noteIdx: i, measureIdx: mi, beatStart: beatsInMeasure,
       });
       beatsInMeasure += nb;
@@ -147,7 +154,7 @@ export function buildLayout() {
     boxes.push({
       measureIdx: mi,
       row:        curRow,
-      x0:         ML + mStartX,
+      x0:         ML + pad + mStartX,
       w:          mPx,
       startIdx:   m.startIdx,
       endIdx:     m.endIdx,
@@ -206,10 +213,29 @@ function drawMeasureBackgrounds(boxes, rowOffset) {
 }
 
 // ── Pentagrama: líneas, clave, compás, divisores ──────────────
+// Posiciones (slot) estándar de la armadura en clave de SOL
+const SHARP_SLOTS = [8, 5, 9, 6, 3, 7, 4];
+const FLAT_SLOTS  = [4, 7, 3, 6, 2, 5, 1];
+
+function drawKeySignature(r) {
+  const ks = state.keySignature || 0;
+  if (!ks) return;
+  const slots = (ks > 0 ? SHARP_SLOTS : FLAT_SLOTS).slice(0, Math.abs(ks));
+  const glyph = ks > 0 ? '♯' : '♭';
+  ctx.fillStyle    = cssVar('--staff-clef');
+  ctx.font         = '13px serif';
+  ctx.textAlign    = 'center';
+  ctx.textBaseline = 'middle';
+  slots.forEach((slot, k) => {
+    ctx.fillText(glyph, ML + 6 + k * 8, sY(r, 4) - slot * (SS / 2));
+  });
+}
+
 function drawStaff() {
   const capacity  = beatsPerMeasure();
   const measurePx = capacity * NW;
-  const rowW      = W - ML - MR;
+  const pad       = keySigPad();
+  const rowW      = W - ML - pad - MR;
 
   for (let r = 0; r < RPP; r++) {
     // Cinco líneas horizontales
@@ -236,13 +262,15 @@ function drawStaff() {
     ctx.fillText(String(state.timeSignature.num), ML - 14, sY(r, 1) + 2);
     ctx.fillText(String(state.timeSignature.den), ML - 14, sY(r, 3) + 2);
 
+    drawKeySignature(r);
+
     // Divisores de compás (rejilla fija)
     ctx.strokeStyle = cssVar('--staff-bar');
     ctx.lineWidth   = 0.8;
     for (let b = 1; ; b++) {
       const xInRow = b * measurePx;
       if (xInRow > rowW + 1) break;
-      const bx = ML + xInRow;
+      const bx = ML + pad + xInRow;
       ctx.beginPath();
       ctx.moveTo(bx, sY(r, 0));
       ctx.lineTo(bx, sY(r, 4));
@@ -347,11 +375,13 @@ function drawNote(n, x, row, { selected = false, isActive = false, ghost = false
     ctx.beginPath(); ctx.arc(x + 10, y - 2, 1.8, 0, Math.PI * 2); ctx.fill();
   }
 
-  if (n.accidental === 'sharp' || n.accidental === 'flat') {
+  if (n.accidental !== 'none') {
     ctx.font         = '12px serif';
     ctx.textAlign    = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText(n.accidental === 'sharp' ? '♯' : '♭', x - 13, y);
+    const glyph = n.accidental === 'sharp' ? '♯'
+                : n.accidental === 'flat' ? '♭' : '♮';
+    ctx.fillText(glyph, x - 13, y);
   }
 
   // Etiqueta bajo el pentagrama (no para fantasma)
@@ -433,7 +463,8 @@ function drawGhost(layoutItems, rowOffset) {
     ctx.fillStyle    = cssVar('--accent') || '#5B6CFF';
     ctx.globalAlpha  = 0.85;
     const acc = ghostNote.accidental === 'sharp' ? '#'
-              : ghostNote.accidental === 'flat' ? 'b' : '';
+              : ghostNote.accidental === 'flat' ? 'b'
+              : ghostNote.accidental === 'natural' ? '♮' : '';
     ctx.fillText(NOTE_DISPLAY[ghostNote.note] + acc, cursorX + 16, y);
     ctx.restore();
   }

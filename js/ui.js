@@ -154,7 +154,8 @@ function updateStatus() {
     $('status-note').textContent = `${state.selection.length} notas seleccionadas`;
   } else if (state.selectedNote >= 0 && state.notes[state.selectedNote]) {
     const sn  = state.notes[state.selectedNote];
-    const acc = sn.accidental === 'sharp' ? '♯' : sn.accidental === 'flat' ? '♭' : '';
+    const acc = sn.accidental === 'sharp' ? '♯' : sn.accidental === 'flat' ? '♭'
+              : sn.accidental === 'natural' ? '♮' : '';
     const dot = sn.dotted ? '.' : '';
     $('status-note').textContent = sn.rest
       ? `Silencio ${sn.dur}${dot}`
@@ -545,6 +546,13 @@ function bindToolbar() {
     scheduleSave();
   });
 
+  $('key-sig-sel').addEventListener('change', e => {
+    state.keySignature = parseInt(e.target.value, 10) || 0;
+    markCodeDirty();
+    render();
+    scheduleSave();
+  });
+
   // MCU: combobox generado desde el registro de plantillas
   const mcuSel = $('mcu-sel');
   mcuSel.innerHTML = '';
@@ -873,6 +881,11 @@ export function syncControlsFromState() {
   const tsSel = $('time-sig-sel');
   const tsVal = `${state.timeSignature.num}/${state.timeSignature.den}`;
   if ([...tsSel.options].some(o => o.value === tsVal)) tsSel.value = tsVal;
+
+  const ksSel = $('key-sig-sel');
+  const ksVal = String(state.keySignature || 0);
+  if ([...ksSel.options].some(o => o.value === ksVal)) ksSel.value = ksVal;
+  else { ksSel.value = '0'; state.keySignature = 0; }
 
   $('mcu-sel').value = state.mcu;
   syncExtraCodeUI();

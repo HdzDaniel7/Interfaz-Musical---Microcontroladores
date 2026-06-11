@@ -15,6 +15,7 @@ export const state = {
   bpm:           120,
   mcu:           'esp32',
   timeSignature: { num: 4, den: 4 },
+  keySignature:  0,    // sostenidos (+) / bemoles (−), 0 = Do mayor
   selectedNote:  -1,   // nota primaria (sync con el código)
   selection:     [],   // selección múltiple (incluye la primaria)
   history:       [],
@@ -83,7 +84,7 @@ export function clearAll() {
 // VALIDACIÓN Y MIGRACIÓN
 // ══════════════════════════════════════════════════════════════
 
-const VALID_ACCIDENTALS = ['none', 'sharp', 'flat'];
+const VALID_ACCIDENTALS = ['none', 'sharp', 'flat', 'natural'];
 const VALID_MCUS        = ['esp32', 'arduino-uno', 'atmega328p'];
 
 // Filtra el array de notas dejando solo entradas bien formadas
@@ -157,6 +158,8 @@ function applyProjectData(d) {
   state.bpm           = clampBpm(d.bpm ?? 120);
   state.mcu           = migrateMcu(d.mcu);
   state.timeSignature = sanitizeTimeSignature(d.timeSignature);
+  state.keySignature  = Number.isInteger(d.keySignature)
+    ? Math.max(-7, Math.min(7, d.keySignature)) : 0;
   state.extraCode     = sanitizeExtraCode(d.extraCode);
 }
 
@@ -173,6 +176,7 @@ export function exportProject() {
     bpm:           state.bpm,
     mcu:           state.mcu,
     timeSignature: state.timeSignature,
+    keySignature:  state.keySignature,
     extraCode:     state.extraCode,
     repeats:       state.repeats,
   }, null, 2);
