@@ -15,7 +15,7 @@ import {
   getRow, yToNote, noteAt, insertionIndexAt, onAfterRender, invalidateThemeCache,
 } from './renderer.js';
 import { playScore, stopScore, setVolume, previewNote, isPlaying } from './audio.js';
-import { exportMidi } from './midi.js';
+import { exportMidi, midiToProject } from './midi.js';
 import { TEMPLATES, getTemplate, generateCode, currentFileName } from './codegen/registry.js';
 import { DEMO_PROJECT } from './demo.js';
 
@@ -534,6 +534,45 @@ function bindActions() {
   $('btn-export-midi').addEventListener('click', () => {
     if (exportMidi()) showToast('MIDI exportado', { type: 'success' });
     else showToast('No hay notas en la partitura', { type: 'warn' });
+  });
+
+  $('btn-import-midi').addEventListener('click', () => $('midi-file-input').click());
+
+  $('midi-file-input').addEventListener('change', e => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = ev => {
+      try {
+        const r = midiToProject(ev.target.result);
+        pushHistory();
+        state.notes = r.notes;
+        state.z2    = r.z2;
+        if (r.bpm) state.bpm = r.bpm;
+        if (r.timeSig && [...$('time-sig-sel').options]
+              .some(o => o.value === `${r.timeSig.num}/${r.timeSig.den}`)) {
+          state.timeSignature = r.timeSig;
+        }
+        state.title        = file.name.replace(/\.(mid|midi)$/i, '');
+        state.currentPage  = 0;
+        state.selectedNote = -1;
+        syncControlsFromState();
+        markCodeDirty();
+        render();
+        scheduleSave();
+        const extra = r.info.ajustadas ? ` (${r.info.ajustadas} ajustadas de octava)` : '';
+        showToast(`MIDI importado: ${r.info.total} notas${extra}`, {
+          type: 'success',
+          duration: 5000,
+          actionLabel: 'Deshacer',
+          onAction: () => { if (undo()) { markCodeDirty(); render(); saveNow(); } },
+        });
+      } catch (err) {
+        showToast(`No se pudo importar: ${err.message}`, { type: 'error', duration: 4000 });
+      }
+    };
+    reader.readAsArrayBuffer(file);
+    e.target.value = '';
   });
 
   $('btn-copy').addEventListener('click', async () => {

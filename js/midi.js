@@ -5,7 +5,7 @@
 
 import { state } from './state.js';
 import { resolvePitch } from './music.js';
-import { DUR_BEATS } from './constants.js';
+import { DUR_BEATS, NOTE_SLOT, Z2_MIN, Z2_MAX } from './constants.js';
 import { safeFileName } from './codegen/common.js';
 
 // ── Helpers para escribir bytes MIDI ─────────────────────────
@@ -167,4 +167,180 @@ export function exportMidi() {
   a.click();
   URL.revokeObjectURL(a.href);
   return true;
+}
+
+// ══════════════════════════════════════════════════════════════
+// IMPORTACIÓN MIDI → partitura
+// Extrae la melodía (pista con más notas, voz superior), la
+// cuantiza a semicorcheas y elige el z2 que mejor cubre el rango.
+// ══════════════════════════════════════════════════════════════
+
+// Semitono → nota natural + accidental
+const PC_TO_NOTE = [
+  ['DO', 'none'], ['DO', 'sharp'], ['RE', 'none'], ['RE', 'sharp'],
+  ['MI', 'none'], ['FA', 'none'], ['FA', 'sharp'], ['SOL', 'none'],
+  ['SOL', 'sharp'], ['LA', 'none'], ['LA', 'sharp'], ['SI', 'none'],
+];
+
+// Unidades de semicorchea → figuras (de mayor a menor)
+const UNITS_TO_FIG = [
+  [24, 'TT', true], [16, 'TT', false], [12, 'DT', true], [8, 'DT', false],
+  [6, 'T', true], [4, 'T', false], [3, 'MT', true], [2, 'MT', false],
+  [1, 'CT', false],
+];
+
+function unitsToFigures(units, rest, pitch) {
+  const out = [];
+  while (units > 0) {
+    const fig = UNITS_TO_FIG.find(([u]) => u <= units) || UNITS_TO_FIG.at(-1);
+    out.push({
+      note:       pitch ? pitch.note : 'SI',
+      dur:        fig[1],
+      dotted:     fig[2],
+      rest,
+      accidental: pitch ? pitch.accidental : 'none',
+    });
+    units -= fig[0];
+  }
+  return out;
+}
+
+// Parser binario de .mid (formato 0 y 1, división PPQ)
+function parseMidiFile(buffer) {
+  const data = new DataView(buffer);
+  let pos = 0;
+
+  const u32 = () => { const v = data.getUint32(pos); pos += 4; return v; };
+  const u16 = () => { const v = data.getUint16(pos); pos += 2; return v; };
+  const u8  = () => data.getUint8(pos++);
+  const vlq = () => {
+    let v = 0, b;
+    do { b = u8(); v = (v << 7) | (b & 0x7F); } while (b & 0x80);
+    return v;
+  };
+  const str4 = () => {
+    const s = String.fromCharCode(u8(), u8(), u8(), u8());
+    return s;
+  };
+
+  if (str4() !== 'MThd') throw new Error('No es un archivo MIDI');
+  if (u32() !== 6) throw new Error('Cabecera MIDI inválida');
+  u16(); // formato (0/1/2)
+  const ntrks    = u16();
+  const division = u16();
+  if (division & 0x8000) throw new Error('División SMPTE no soportada');
+
+  let bpm = null;
+  let timeSig = null;
+  const tracks = [];
+
+  for (let t = 0; t < ntrks; t++) {
+    if (str4() !== 'MTrk') throw new Error('Chunk de pista inválido');
+    const end = pos + u32();
+    const open  = new Map(); // midi → tick de inicio
+    const notes = [];
+    let tick = 0, running = 0;
+
+    while (pos < end) {
+      tick += vlq();
+      let status = u8();
+      if (status < 0x80) { pos--; status = running; } // running status
+      else if (status < 0xF0) running = status;
+
+      const type = status & 0xF0;
+      if (type === 0x90 || type === 0x80) {
+        const midi = u8(), vel = u8();
+        if (type === 0x90 && vel > 0) {
+          if (!open.has(midi)) open.set(midi, tick);
+        } else if (open.has(midi)) {
+          notes.push({ midi, start: open.get(midi), end: tick });
+          open.delete(midi);
+        }
+      } else if (type === 0xA0 || type === 0xB0 || type === 0xE0) {
+        pos += 2;
+      } else if (type === 0xC0 || type === 0xD0) {
+        pos += 1;
+      } else if (status === 0xFF) {
+        const meta = u8(), len = vlq(), at = pos;
+        if (meta === 0x51 && bpm === null) {
+          const us = (u8() << 16) | (u8() << 8) | u8();
+          bpm = Math.round(60000000 / us);
+        } else if (meta === 0x58 && timeSig === null) {
+          const nn = u8(), dd = u8();
+          timeSig = { num: nn, den: 2 ** dd };
+        }
+        pos = at + len;
+      } else { // SysEx F0/F7
+        pos += vlq();
+      }
+    }
+    pos = end;
+    tracks.push(notes);
+  }
+
+  return { tracks, division, bpm, timeSig };
+}
+
+// Importa un ArrayBuffer .mid y devuelve { notes, bpm, timeSig, info }
+export function midiToProject(buffer) {
+  const { tracks, division, bpm, timeSig } = parseMidiFile(buffer);
+
+  // Pista con más notas = la melodía (heurística habitual)
+  const track = tracks.reduce((a, b) => (b.length > a.length ? b : a), []);
+  if (!track.length) throw new Error('El MIDI no contiene notas');
+
+  // Monofónico: en acordes gana la voz superior; sin solapamientos
+  track.sort((a, b) => a.start - b.start || b.midi - a.midi);
+  const mono = [];
+  for (const n of track) {
+    const last = mono[mono.length - 1];
+    if (last && n.start === last.start) continue;          // acorde → ya tomamos la superior
+    if (last && n.start < last.end) last.end = n.start;    // solapado → recortar anterior
+    mono.push({ ...n });
+  }
+
+  // Mejor z2: el que deja más notas dentro del rango SOL(z2-1)…RE(z2+2)
+  let bestZ2 = 5, bestHits = -1;
+  for (let z2 = Z2_MIN; z2 <= Z2_MAX; z2++) {
+    const lo = 12 * (z2 - 1) + 7, hi = 12 * (z2 + 2) + 2;
+    const hits = mono.filter(n => n.midi >= lo && n.midi <= hi).length;
+    if (hits > bestHits) { bestHits = hits; bestZ2 = z2; }
+  }
+  const lo = 12 * (bestZ2 - 1) + 7, hi = 12 * (bestZ2 + 2) + 2;
+
+  // Cuantizar a semicorcheas y construir la partitura
+  const unit = division / 4;
+  const SUFFIX = { '-1': 'm', 0: '', 1: 'M', 2: 'MM' };
+  const notes = [];
+  let cursor = 0, ajustadas = 0;
+
+  for (const n of mono) {
+    const qStart = Math.round(n.start / unit);
+    const qEnd   = Math.max(qStart + 1, Math.round(n.end / unit));
+
+    if (qStart > cursor) notes.push(...unitsToFigures(qStart - cursor, true, null));
+
+    let midi = n.midi;
+    if (midi < lo || midi > hi) {
+      while (midi < lo) midi += 12;
+      while (midi > hi) midi -= 12;
+      ajustadas++;
+    }
+
+    const [base, accidental] = PC_TO_NOTE[midi % 12];
+    const rel  = Math.floor(midi / 12) - bestZ2;
+    const name = base + (SUFFIX[rel] ?? '');
+    if (NOTE_SLOT[name] === undefined) continue; // fuera de rango tras ajuste (no debería ocurrir)
+
+    notes.push(...unitsToFigures(qEnd - qStart, false, { note: name, accidental }));
+    cursor = qEnd;
+  }
+
+  return {
+    notes,
+    z2:  bestZ2,
+    bpm: bpm ? Math.max(40, Math.min(300, bpm)) : null,
+    timeSig,
+    info: { total: mono.length, ajustadas },
+  };
 }
