@@ -3,7 +3,7 @@
    ============================================================ */
 
 import {
-  state, pushHistory, undo, redo, deleteSelected, clearAll,
+  state, pushHistory, undo, redo, deleteSelected, clearAll, clearSelection,
   exportProject, importProject, scheduleSave, saveNow, saveTheme,
 } from './state.js';
 import {
@@ -150,7 +150,9 @@ function updateStatus() {
   $('status-timesig').textContent = `Compás: ${ts.num}/${ts.den}`;
   $('status-mcu').textContent     = `MCU: ${getTemplate(state.mcu).label}`;
 
-  if (state.selectedNote >= 0 && state.notes[state.selectedNote]) {
+  if (state.selection.length > 1) {
+    $('status-note').textContent = `${state.selection.length} notas seleccionadas`;
+  } else if (state.selectedNote >= 0 && state.notes[state.selectedNote]) {
     const sn  = state.notes[state.selectedNote];
     const acc = sn.accidental === 'sharp' ? '♯' : sn.accidental === 'flat' ? '♭' : '';
     const dot = sn.dotted ? '.' : '';
@@ -283,16 +285,52 @@ function doClearAll() {
   });
 }
 
-// Transponer la nota seleccionada un slot arriba/abajo
-function transposeSelected(delta) {
-  const i = state.selectedNote;
-  if (i < 0 || !state.notes[i] || state.notes[i].rest) return;
-  const slot = NOTE_SLOT[state.notes[i].note] ?? 0;
-  const next = Math.max(SLOT_MIN, Math.min(SLOT_MAX, slot + delta));
-  if (next === slot) return;
+// ── Selección múltiple y portapapeles ─────────────────────────
+let _clipboard = [];
+
+function selectedIndices() {
+  if (state.selection.length) return [...state.selection].sort((a, b) => a - b);
+  return state.selectedNote >= 0 ? [state.selectedNote] : [];
+}
+
+function copySelection() {
+  const idxs = selectedIndices();
+  if (!idxs.length) return 0;
+  _clipboard = idxs.map(i => ({ ...state.notes[i] }));
+  return _clipboard.length;
+}
+
+function pasteClipboard() {
+  if (!_clipboard.length) {
+    showToast('El portapapeles está vacío', { type: 'warn', duration: 1800 });
+    return;
+  }
   pushHistory();
-  state.notes[i] = { ...state.notes[i], note: SLOT_TO_NOTE[next] };
-  previewNote(state.notes[i].note, state.notes[i].accidental);
+  const idxs = selectedIndices();
+  const at = idxs.length ? idxs[idxs.length - 1] + 1 : state.notes.length;
+  state.notes.splice(at, 0, ..._clipboard.map(n => ({ ...n })));
+  state.selection = Array.from({ length: _clipboard.length }, (_, k) => at + k);
+  state.selectedNote = at + _clipboard.length - 1;
+  afterNotesChanged();
+}
+
+function duplicateSelection() {
+  if (copySelection()) pasteClipboard();
+}
+
+// Transponer la selección un slot arriba/abajo
+function transposeSelected(delta) {
+  const idxs = selectedIndices().filter(i => state.notes[i] && !state.notes[i].rest);
+  if (!idxs.length) return;
+  pushHistory();
+  let preview = null;
+  for (const i of idxs) {
+    const slot = NOTE_SLOT[state.notes[i].note] ?? 0;
+    const next = Math.max(SLOT_MIN, Math.min(SLOT_MAX, slot + delta));
+    state.notes[i] = { ...state.notes[i], note: SLOT_TO_NOTE[next] };
+    preview = state.notes[i];
+  }
+  if (preview) previewNote(preview.note, preview.accidental);
   afterNotesChanged();
 }
 
@@ -308,6 +346,7 @@ function moveSelection(delta) {
   i = i < 0 ? (delta > 0 ? 0 : state.notes.length - 1)
             : Math.max(0, Math.min(state.notes.length - 1, i + delta));
   state.selectedNote = i;
+  state.selection = [i];
   render();
 }
 
@@ -332,6 +371,29 @@ function bindCanvas() {
     // Clic sobre nota existente → seleccionar e iniciar arrastre
     const hit = noteAt(cx, cy);
     if (hit >= 0) {
+      if (e.shiftKey && state.selectedNote >= 0) {
+        // Shift: rango desde la nota primaria
+        const a = Math.min(state.selectedNote, hit);
+        const b = Math.max(state.selectedNote, hit);
+        state.selection = Array.from({ length: b - a + 1 }, (_, k) => a + k);
+        state.selectedNote = hit;
+        render();
+        return;
+      }
+      if (e.ctrlKey || e.metaKey) {
+        // Ctrl: alternar nota en la selección
+        const s = new Set(state.selection.length ? state.selection
+          : (state.selectedNote >= 0 ? [state.selectedNote] : []));
+        s.has(hit) ? s.delete(hit) : s.add(hit);
+        state.selection = [...s].sort((x, y) => x - y);
+        state.selectedNote = s.has(hit) ? hit
+          : (state.selection[state.selection.length - 1] ?? -1);
+        render();
+        return;
+      }
+      // Clic normal: si ya es parte de una selección múltiple, se
+      // conserva (para arrastrar el grupo); si no, selección simple.
+      if (!state.selection.includes(hit)) state.selection = [hit];
       state.selectedNote = hit;
       _dragging = true;
       _dragIdx  = hit;
@@ -342,7 +404,7 @@ function bindCanvas() {
       return;
     }
 
-    state.selectedNote = -1;
+    clearSelection();
     const row = getRow(cy);
     if (row < 0) { render(); return; }
 
@@ -364,6 +426,7 @@ function bindCanvas() {
     };
     state.notes.splice(insertIdx, 0, nn);
     state.selectedNote = insertIdx;
+    state.selection = [insertIdx];
     if (!nn.rest) previewNote(nn.note, nn.accidental);
     afterNotesChanged();
   });
@@ -379,7 +442,17 @@ function bindCanvas() {
         const n = state.notes[_dragIdx];
         if (n && !n.rest && n.note !== newNote) {
           if (!_dragHistoryPushed) { pushHistory(); _dragHistoryPushed = true; }
-          state.notes[_dragIdx] = { ...n, note: newNote };
+          // Si la nota arrastrada es parte de una selección múltiple,
+          // todo el grupo se transpone por el mismo intervalo.
+          const delta = (NOTE_SLOT[newNote] ?? 0) - (NOTE_SLOT[n.note] ?? 0);
+          const targets = state.selection.length > 1 && state.selection.includes(_dragIdx)
+            ? state.selection : [_dragIdx];
+          for (const i of targets) {
+            const m = state.notes[i];
+            if (!m || m.rest) continue;
+            const slot = Math.max(SLOT_MIN, Math.min(SLOT_MAX, (NOTE_SLOT[m.note] ?? 0) + delta));
+            state.notes[i] = { ...m, note: SLOT_TO_NOTE[slot] };
+          }
           previewNote(newNote, n.accidental, 90);
           markCodeDirty();
           scheduleSave();
@@ -703,12 +776,36 @@ function bindKeyboard() {
     if (isTypingTarget(e.target)) return;
 
     if (e.ctrlKey || e.metaKey) {
-      if (e.key === 'z' || e.key === 'Z') {
+      const k = e.key.toLowerCase();
+      if (k === 'z') {
         e.preventDefault();
         e.shiftKey ? doRedo() : doUndo();
-      } else if (e.key === 'y' || e.key === 'Y') {
+      } else if (k === 'y') {
         e.preventDefault();
         doRedo();
+      } else if (k === 'c') {
+        const n = copySelection();
+        if (n) showToast(`${n} nota${n !== 1 ? 's' : ''} copiada${n !== 1 ? 's' : ''}`, { duration: 1500 });
+      } else if (k === 'x') {
+        e.preventDefault();
+        const n = copySelection();
+        if (n && deleteSelected()) {
+          afterNotesChanged();
+          showToast(`${n} nota${n !== 1 ? 's' : ''} cortada${n !== 1 ? 's' : ''}`, { duration: 1500 });
+        }
+      } else if (k === 'v') {
+        e.preventDefault();
+        pasteClipboard();
+      } else if (k === 'd') {
+        e.preventDefault();
+        duplicateSelection();
+      } else if (k === 'a') {
+        e.preventDefault();
+        if (state.notes.length) {
+          state.selection = state.notes.map((_, i) => i);
+          state.selectedNote = state.notes.length - 1;
+          render();
+        }
       }
       return;
     }
@@ -723,7 +820,7 @@ function bindKeyboard() {
         isPlaying() ? stopScore() : startPlayback();
         break;
       case 'Escape':
-        state.selectedNote = -1;
+        clearSelection();
         render();
         break;
       case 'ArrowLeft':  e.preventDefault(); moveSelection(-1); break;

@@ -563,11 +563,14 @@ export function render() {
   drawStaff();
   drawRepeatSigns(boxes, rowOffset);
 
+  const selSet = new Set(state.selection);
+  if (state.selectedNote >= 0) selSet.add(state.selectedNote);
+
   for (const { note, x, row, noteIdx } of items) {
     const pageRow = row - rowOffset;
     if (pageRow < 0 || pageRow >= RPP) continue;
     drawNote(note, x, pageRow, {
-      selected: noteIdx === state.selectedNote,
+      selected: selSet.has(noteIdx),
       isActive: noteIdx === activeNoteIdx,
     });
   }

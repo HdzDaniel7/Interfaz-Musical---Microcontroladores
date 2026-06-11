@@ -15,7 +15,8 @@ export const state = {
   bpm:           120,
   mcu:           'esp32',
   timeSignature: { num: 4, den: 4 },
-  selectedNote:  -1,
+  selectedNote:  -1,   // nota primaria (sync con el código)
+  selection:     [],   // selección múltiple (incluye la primaria)
   history:       [],
   redoStack:     [],
   activeTool:    { dur: 'T', rest: false, dotted: false },
@@ -36,11 +37,16 @@ export function pushHistory() {
   if (state.history.length > 80) state.history.shift();
 }
 
+export function clearSelection() {
+  state.selectedNote = -1;
+  state.selection = [];
+}
+
 export function undo() {
   if (!state.history.length) return false;
   state.redoStack.push(JSON.stringify(state.notes));
   state.notes = JSON.parse(state.history.pop());
-  state.selectedNote = -1;
+  clearSelection();
   return true;
 }
 
@@ -48,15 +54,19 @@ export function redo() {
   if (!state.redoStack.length) return false;
   state.history.push(JSON.stringify(state.notes));
   state.notes = JSON.parse(state.redoStack.pop());
-  state.selectedNote = -1;
+  clearSelection();
   return true;
 }
 
+// Borra todas las notas de la selección múltiple (o la primaria)
 export function deleteSelected() {
-  if (state.selectedNote < 0) return false;
+  const idxs = state.selection.length
+    ? [...state.selection]
+    : (state.selectedNote >= 0 ? [state.selectedNote] : []);
+  if (!idxs.length) return false;
   pushHistory();
-  state.notes.splice(state.selectedNote, 1);
-  state.selectedNote = -1;
+  idxs.sort((a, b) => b - a).forEach(i => state.notes.splice(i, 1));
+  clearSelection();
   return true;
 }
 
@@ -65,7 +75,7 @@ export function clearAll() {
   pushHistory();
   state.notes = [];
   state.repeats = [];
-  state.selectedNote = -1;
+  clearSelection();
   return true;
 }
 
@@ -172,8 +182,8 @@ export function importProject(jsonStr) {
   if (!d || typeof d !== 'object') throw new Error('Formato inválido');
   pushHistory();
   applyProjectData(d);
-  state.currentPage  = 0;
-  state.selectedNote = -1;
+  state.currentPage = 0;
+  clearSelection();
 }
 
 // ══════════════════════════════════════════════════════════════
