@@ -365,7 +365,6 @@ function bindCanvas() {
 function bindToolbar() {
   document.querySelectorAll('.tool-btn[data-dur]').forEach(btn => {
     btn.addEventListener('click', () => {
-      if (btn.disabled) return;
       selectTool(btn.dataset.dur, btn.dataset.rest === '1');
     });
   });

@@ -827,11 +827,11 @@ body.is-playing .statusbar .dot {
   clip: rect(0,0,0,0); border: 0;
 }
 
-/* ── Botón de duración no disponible en el compás actual ────── */
+/* ── Figura que no cabe al final de la partitura ─────────────
+   Atenuada pero clicable: puede caber en una inserción a media
+   pieza (el fantasma se pinta rojo cuando no cabe). */
 .tool-btn.unavailable {
-  opacity: 0.28;
-  cursor: not-allowed;
-  pointer-events: none;
+  opacity: 0.38;
 }
 .tool-btn:disabled {
   opacity: 0.28;
