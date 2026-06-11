@@ -137,7 +137,10 @@ export function buildLayout() {
       const noteW = (nb / capacity) * measurePx;
       const xRel  = mStartX + (beatsInMeasure / capacity) * measurePx + noteW / 2;
 
-      items.push({ note: n, x: ML + xRel, w: noteW, row: curRow, noteIdx: i, measureIdx: mi });
+      items.push({
+        note: n, x: ML + xRel, w: noteW, row: curRow,
+        noteIdx: i, measureIdx: mi, beatStart: beatsInMeasure,
+      });
       beatsInMeasure += nb;
     }
 
@@ -257,7 +260,7 @@ function drawStaff() {
 }
 
 // ── Dibuja una nota (o silencio) ──────────────────────────────
-function drawNote(n, x, row, { selected = false, isActive = false, ghost = false, fits = true } = {}) {
+function drawNote(n, x, row, { selected = false, isActive = false, ghost = false, fits = true, beamed = false } = {}) {
   const noteColor = ghost
     ? (fits ? (cssVar('--accent') || '#5B6CFF')
             : (cssVar('--danger') || '#E5484D'))
@@ -316,22 +319,26 @@ function drawNote(n, x, row, { selected = false, isActive = false, ghost = false
 
   } else {
     ctx.beginPath(); ctx.ellipse(x, y, 6, 4, -0.3, 0, Math.PI * 2); ctx.fill();
-    const sx  = stemUp ? x + 6 : x - 6;
-    const sy2 = stemUp ? y - 30 : y + 30;
-    ctx.lineWidth = 1.4;
-    ctx.beginPath(); ctx.moveTo(sx, y); ctx.lineTo(sx, sy2); ctx.stroke();
 
-    if (n.dur === 'MT' || n.dur === 'CT') {
-      const dir = stemUp ? 1 : -1;
-      ctx.beginPath();
-      ctx.moveTo(sx, sy2 + dir * 2);
-      ctx.quadraticCurveTo(sx + 10, sy2 + 9 * dir, sx + 4, sy2 + 18 * dir);
-      ctx.stroke();
-      if (n.dur === 'CT') {
+    // Las notas unidas por barra (beam) reciben plica y barra aparte
+    if (!beamed) {
+      const sx  = stemUp ? x + 6 : x - 6;
+      const sy2 = stemUp ? y - 30 : y + 30;
+      ctx.lineWidth = 1.4;
+      ctx.beginPath(); ctx.moveTo(sx, y); ctx.lineTo(sx, sy2); ctx.stroke();
+
+      if (n.dur === 'MT' || n.dur === 'CT') {
+        const dir = stemUp ? 1 : -1;
         ctx.beginPath();
-        ctx.moveTo(sx, sy2 + 8 * dir);
-        ctx.quadraticCurveTo(sx + 9, sy2 + 16 * dir, sx + 2, sy2 + 24 * dir);
+        ctx.moveTo(sx, sy2 + dir * 2);
+        ctx.quadraticCurveTo(sx + 10, sy2 + 9 * dir, sx + 4, sy2 + 18 * dir);
         ctx.stroke();
+        if (n.dur === 'CT') {
+          ctx.beginPath();
+          ctx.moveTo(sx, sy2 + 8 * dir);
+          ctx.quadraticCurveTo(sx + 9, sy2 + 16 * dir, sx + 2, sy2 + 24 * dir);
+          ctx.stroke();
+        }
       }
     }
   }
@@ -429,6 +436,86 @@ function drawGhost(layoutItems, rowOffset) {
               : ghostNote.accidental === 'flat' ? 'b' : '';
     ctx.fillText(NOTE_DISPLAY[ghostNote.note] + acc, cursorX + 16, y);
     ctx.restore();
+  }
+}
+
+// ── Beaming: agrupar corcheas/semicorcheas del mismo pulso ────
+// Devuelve grupos (≥2 notas) de items consecutivos beamables:
+// misma fila, mismo compás y mismo pulso de negra.
+function computeBeamGroups(items) {
+  const groups = [];
+  let group = [];
+
+  const beamable = it => !it.note.rest && (it.note.dur === 'MT' || it.note.dur === 'CT');
+
+  const flush = () => {
+    if (group.length >= 2) groups.push(group);
+    group = [];
+  };
+
+  for (const it of items) {
+    if (!beamable(it)) { flush(); continue; }
+    const prev = group[group.length - 1];
+    const sameBeat = prev &&
+      prev.row === it.row &&
+      prev.measureIdx === it.measureIdx &&
+      Math.floor(prev.beatStart + 1e-6) === Math.floor(it.beatStart + 1e-6);
+    if (prev && !sameBeat) flush();
+    group.push(it);
+  }
+  flush();
+  return groups;
+}
+
+function drawBeams(groups, rowOffset, selSet) {
+  for (const group of groups) {
+    const pageRow = group[0].row - rowOffset;
+    if (pageRow < 0 || pageRow >= RPP) continue;
+
+    const ys = group.map(it => noteToY(it.note.note, pageRow));
+    const avgSlot = group.reduce((s, it) => s + (NOTE_SLOT[it.note.note] ?? 0), 0) / group.length;
+    const up = avgSlot < 4;
+    const beamY = up ? Math.min(...ys) - 30 : Math.max(...ys) + 30;
+    const stemX = it => (up ? it.x + 6 : it.x - 6);
+
+    // Plicas (con el color de cada nota)
+    group.forEach((it, k) => {
+      ctx.strokeStyle = selSet.has(it.noteIdx)
+        ? cssVar('--note-selected') : cssVar('--note-normal');
+      ctx.lineWidth = 1.4;
+      ctx.beginPath();
+      ctx.moveTo(stemX(it), ys[k]);
+      ctx.lineTo(stemX(it), beamY);
+      ctx.stroke();
+    });
+
+    // Barra principal
+    ctx.strokeStyle = cssVar('--note-normal');
+    ctx.lineWidth   = 3.2;
+    ctx.beginPath();
+    ctx.moveTo(stemX(group[0]), beamY);
+    ctx.lineTo(stemX(group[group.length - 1]), beamY);
+    ctx.stroke();
+
+    // Segunda barra para semicorcheas
+    const second = beamY + (up ? 5 : -5);
+    const allCT  = group.every(it => it.note.dur === 'CT');
+    ctx.lineWidth = 2.4;
+    if (allCT) {
+      ctx.beginPath();
+      ctx.moveTo(stemX(group[0]), second);
+      ctx.lineTo(stemX(group[group.length - 1]), second);
+      ctx.stroke();
+    } else {
+      group.forEach((it, k) => {
+        if (it.note.dur !== 'CT') return;
+        const dir = k > 0 ? -1 : 1; // stub hacia el vecino
+        ctx.beginPath();
+        ctx.moveTo(stemX(it), second);
+        ctx.lineTo(stemX(it) + dir * 9, second);
+        ctx.stroke();
+      });
+    }
   }
 }
 
@@ -603,15 +690,21 @@ export function render() {
   const selSet = new Set(state.selection);
   if (state.selectedNote >= 0) selSet.add(state.selectedNote);
 
+  const beamGroups = computeBeamGroups(items);
+  const beamedSet  = new Set();
+  for (const g of beamGroups) for (const it of g) beamedSet.add(it.noteIdx);
+
   for (const { note, x, row, noteIdx } of items) {
     const pageRow = row - rowOffset;
     if (pageRow < 0 || pageRow >= RPP) continue;
     drawNote(note, x, pageRow, {
       selected: selSet.has(noteIdx),
       isActive: noteIdx === activeNoteIdx,
+      beamed:   beamedSet.has(noteIdx),
     });
   }
 
+  drawBeams(beamGroups, rowOffset, selSet);
   drawTies(items, rowOffset);
   drawGhost(items, rowOffset);
   drawPlayhead(rowOffset);
