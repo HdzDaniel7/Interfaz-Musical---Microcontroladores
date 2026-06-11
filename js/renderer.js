@@ -2,157 +2,226 @@
    renderer.js — Dibujo del pentagrama y las notas en canvas
    ============================================================ */
 
-let cursorX = -1;
-let cursorY   = -1;
-let cursorRow = -1;
+import {
+  NOTE_SLOT, SLOT_MIN, SLOT_MAX, SLOT_TO_NOTE, NOTE_DISPLAY, REST_GLYPHS,
+  SS, ST, NW, ML, MR, RPP, RH,
+} from './constants.js';
+import { state } from './state.js';
+import {
+  beatsPerMeasure, noteDurationBeats, analyzeMeasures, fitsInCurrentMeasure,
+} from './music.js';
 
+export const canvas = document.getElementById('score-canvas');
+const ctx = canvas.getContext('2d');
+
+// Dimensiones lógicas (el canvas físico se escala por devicePixelRatio)
+let W = 0, H = 0;
+
+// ── Estado visual (cursor, reproducción) ──────────────────────
+let cursorX = -1, cursorY = -1, cursorRow = -1;
+let activeNoteIdx = -1;          // nota sonando ahora (reproducción)
+let playhead = null;             // { x, row } — cabezal de reproducción
+
+export function setCursor(x, y, row) { cursorX = x; cursorY = y; cursorRow = row; }
+export function clearCursor()        { cursorX = -1; cursorY = -1; cursorRow = -1; }
+export function setActiveNote(i)     { activeNoteIdx = i; }
+export function getActiveNote()      { return activeNoteIdx; }
+export function setPlayhead(p)       { playhead = p; }
+
+// ── Callbacks post-render (la UI se registra aquí; evita ciclos) ──
+const afterRenderFns = [];
+export function onAfterRender(fn) { afterRenderFns.push(fn); }
+
+// ── Cache de variables CSS (getComputedStyle es caro) ─────────
+let cssCache = {};
 function cssVar(v) {
-  return getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+  if (!(v in cssCache)) {
+    cssCache[v] = getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+  }
+  return cssCache[v];
 }
+export function invalidateThemeCache() { cssCache = {}; }
 
+// ── Tamaño del canvas (con escala HiDPI para nitidez) ─────────
 function calcCanvas() {
   const container = document.getElementById('score-container');
-  const w = container.clientWidth - 20;
-  canvas.width  = Math.max(w, 380);
-  canvas.height = RPP * RH + ST + 28;
+  const pad = 36; // padding del wrapper (18px por lado, ver CSS)
+  W = Math.max(container.clientWidth - pad, 380);
+  H = ST + RPP * RH + 10;
+
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width        = Math.round(W * dpr);
+  canvas.height       = Math.round(H * dpr);
+  canvas.style.width  = W + 'px';
+  canvas.style.height = H + 'px';
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+
+// ── Coordenadas del pentagrama ────────────────────────────────
+export function sY(row, line) {
+  return ST + row * RH + line * SS;
+}
+
+export function noteToY(naturalNote, row) {
+  const slot = NOTE_SLOT[naturalNote] !== undefined ? NOTE_SLOT[naturalNote] : 0;
+  return sY(row, 4) - slot * (SS / 2);
+}
+
+export function yToNote(y, row) {
+  const rel  = sY(row, 4) - y;
+  const slot = Math.max(SLOT_MIN, Math.min(SLOT_MAX, Math.round(rel / (SS / 2))));
+  return SLOT_TO_NOTE[slot] || 'MI';
+}
+
+// Extensión vertical clickeable de cada fila:
+// slots por encima de la 5ª línea y por debajo de la 1ª + margen
+const ROW_EXT = Math.ceil((SLOT_MAX - 8) * SS / 2) + 6; // = 31px
+
+export function getRow(y) {
+  for (let r = 0; r < RPP; r++) {
+    const top = sY(r, 0) - ROW_EXT;
+    const bot = sY(r, 4) + ROW_EXT;
+    if (y >= top && y <= bot) return r;
+  }
+  return -1;
 }
 
 // ══════════════════════════════════════════════════════════════
 // LAYOUT PROPORCIONAL
 //
-// Reglas:
-//  1. Un compás completo siempre ocupa exactamente measurePx px.
-//     measurePx = beatsPerMeasure() * NW
-//     (ej: 4/4 → 4*NW, 2/4 → 2*NW, 3/4 → 3*NW, 6/8 → 3*NW)
+//  1. Un compás completo ocupa exactamente measurePx px
+//     (measurePx = beatsPerMeasure() * NW).
+//  2. Cada nota ocupa un ancho proporcional a su duración
+//     respecto a la capacidad del compás.
+//  3. Si un compás no cabe en la fila, salta a la siguiente.
 //
-//  2. Dentro de un compás, cada nota ocupa un ancho proporcional
-//     a su duración RESPECTO a la capacidad total del compás:
-//       noteW = (noteDurationBeats(n) / capacity) * measurePx
-//     Así 4 semicorcheas en 2/4 → cada una ocupa (0.25/2)*2*NW = 0.25*NW
-//     y las 4 juntas ocupan exactamente 1*NW = measurePx/2.
-//     Una blanca en 2/4 → (2/2)*2*NW = 2*NW = measurePx.
-//
-//  3. La posición x de una nota es el centro de su slot:
-//       x = compásStartX + beatsUsadosAntes/capacity * measurePx + noteW/2
-//
-//  4. Las notas se distribuyen en filas de ancho (canvas.width - ML - MR).
-//     Cuando el cursor x supera el ancho de una fila, salta a la siguiente.
-//     Los compases siempre empiezan en un límite de fila limpio si no caben.
+// Devuelve { items, boxes }:
+//   items: [{ note, x, w, row, noteIdx, measureIdx }]
+//   boxes: [{ measureIdx, row, x0, w, startIdx, endIdx,
+//             underflow, overflow }]
 // ══════════════════════════════════════════════════════════════
 
-function buildLayout() {
+export function buildLayout() {
   const measures  = analyzeMeasures();
   const capacity  = beatsPerMeasure();
   const measurePx = capacity * NW;
-  const rowW      = canvas.width - ML - MR;
+  const rowW      = W - ML - MR;
 
-  const layout = []; // { note, x, row, noteIdx, measureIdx }
+  const items = [];
+  const boxes = [];
 
-  let curRow  = 0;
-  let curX    = 0;  // posición x dentro de la fila actual (relativa a ML)
+  let curRow = 0;
+  let curX   = 0; // posición x dentro de la fila (relativa a ML)
 
   for (let mi = 0; mi < measures.length; mi++) {
     const m = measures[mi];
 
-    // Espacio real que ocupa este compás en px
-    // Si el compás está completo → measurePx
-    // Si está incompleto (último compás con menos beats) → proporcional
+    // Compás incompleto (el último) ocupa solo lo proporcional
     const mPx = m.underflow
-      ? (m.beats / capacity) * measurePx   // compás incompleto: solo lo que hay
-      : measurePx;                          // compás completo: ancho fijo
+      ? (m.beats / capacity) * measurePx
+      : measurePx;
 
-    // ¿Cabe el compás en el espacio restante de la fila actual?
-    // Si no cabe completo, saltar a la siguiente fila.
+    // Si no cabe completo en la fila, saltar a la siguiente
     if (curX > 0 && curX + mPx > rowW + 0.5) {
       curRow++;
       curX = 0;
     }
 
-    // Posición x del inicio de este compás
     const mStartX = curX;
-
-    // Beats acumulados dentro del compás (para calcular x de cada nota)
     let beatsInMeasure = 0;
 
     for (let i = m.startIdx; i < m.endIdx; i++) {
-      const n    = state.notes[i];
-      const nb   = noteDurationBeats(n);
+      const n     = state.notes[i];
+      const nb    = noteDurationBeats(n);
       const noteW = (nb / capacity) * measurePx;
+      const xRel  = mStartX + (beatsInMeasure / capacity) * measurePx + noteW / 2;
 
-      // x = inicio del compás + offset proporcional + centro de la nota
-      const xRel = mStartX + (beatsInMeasure / capacity) * measurePx + noteW / 2;
-      const x    = ML + xRel;
-
-      layout.push({ note: n, x, row: curRow, noteIdx: i, measureIdx: mi });
+      items.push({ note: n, x: ML + xRel, w: noteW, row: curRow, noteIdx: i, measureIdx: mi });
       beatsInMeasure += nb;
     }
+
+    boxes.push({
+      measureIdx: mi,
+      row:        curRow,
+      x0:         ML + mStartX,
+      w:          mPx,
+      startIdx:   m.startIdx,
+      endIdx:     m.endIdx,
+      underflow:  m.underflow,
+      overflow:   m.overflow,
+    });
 
     curX += mPx;
   }
 
-  return layout;
+  return { items, boxes, measures };
 }
 
-// ── Dibuja el pentagrama (líneas + divisores de compás) ────────
+// ── Fondos de compás: activo (reproducción) + incompletos ─────
+function drawMeasureBackgrounds(boxes, rowOffset) {
+  for (const b of boxes) {
+    const pageRow = b.row - rowOffset;
+    if (pageRow < 0 || pageRow >= RPP) continue;
+
+    const y = sY(pageRow, 0) - 6;
+    const h = SS * 4 + 12;
+
+    // Compás sonando ahora
+    const isActive = activeNoteIdx >= 0 &&
+                     activeNoteIdx >= b.startIdx && activeNoteIdx < b.endIdx;
+
+    if (isActive) {
+      ctx.save();
+      ctx.fillStyle   = cssVar('--accent') || '#5B6CFF';
+      ctx.globalAlpha = 0.08;
+      ctx.fillRect(b.x0, y, b.w, h);
+      ctx.restore();
+    }
+
+    // Compás con problema de duración
+    if (b.overflow || b.underflow) {
+      const warn = b.overflow ? (cssVar('--danger') || '#E5484D')
+                              : (cssVar('--warning') || '#F5A524');
+      ctx.save();
+      ctx.fillStyle   = warn;
+      ctx.globalAlpha = 0.06;
+      ctx.fillRect(b.x0, y, b.w, h);
+
+      // Barra punteada al final del compás incompleto
+      ctx.globalAlpha = 0.75;
+      ctx.strokeStyle = warn;
+      ctx.lineWidth   = 1.4;
+      ctx.setLineDash([3, 3]);
+      ctx.beginPath();
+      ctx.moveTo(b.x0 + b.w, sY(pageRow, 0));
+      ctx.lineTo(b.x0 + b.w, sY(pageRow, 4));
+      ctx.stroke();
+      ctx.restore();
+    }
+  }
+}
+
+// ── Pentagrama: líneas, clave, compás, divisores ──────────────
 function drawStaff() {
   const capacity  = beatsPerMeasure();
   const measurePx = capacity * NW;
-  const rowW      = canvas.width - ML - MR;
+  const rowW      = W - ML - MR;
 
   for (let r = 0; r < RPP; r++) {
-    // ── Highlight del compás activo durante reproducción ──────
-    if (typeof activeNoteIdx !== 'undefined' && activeNoteIdx >= 0) {
-      const measures      = analyzeMeasures();
-      const activeMeasure = measures.find(m =>
-        activeNoteIdx >= m.startIdx && activeNoteIdx < m.endIdx
-      );
-
-      if (activeMeasure) {
-        const layout       = buildLayout();
-        const rowOffset    = state.currentPage * RPP;
-        const notesInMeasure = layout.filter(l =>
-          l.noteIdx >= activeMeasure.startIdx && l.noteIdx < activeMeasure.endIdx
-        );
-
-        if (notesInMeasure.length > 0) {
-          const firstNote = notesInMeasure[0];
-          const lastNote  = notesInMeasure[notesInMeasure.length - 1];
-          const pageRow   = firstNote.row - rowOffset;
-
-          if (pageRow === r) {
-            const capacity   = beatsPerMeasure();
-            const measurePx  = capacity * NW;
-            // Calcular x inicio del compás desde el índice del primer nota
-            const xStart = firstNote.x - (NW / 2);
-            const xEnd   = xStart + measurePx;
-
-            ctx.save();
-            ctx.fillStyle   = cssVar('--accent') || '#4A90D9';
-            ctx.globalAlpha = 0.07;
-            ctx.fillRect(
-              xStart,
-              sY(r, 0) - 4,
-              xEnd - xStart,
-              SS * 4 + 8
-            );
-            ctx.restore();
-          }
-        }
-      }
-    }
     // Cinco líneas horizontales
     ctx.lineWidth   = 0.8;
     ctx.strokeStyle = cssVar('--staff-line');
     for (let l = 0; l < 5; l++) {
       ctx.beginPath();
       ctx.moveTo(ML - 8, sY(r, l));
-      ctx.lineTo(canvas.width - MR, sY(r, l));
+      ctx.lineTo(W - MR, sY(r, l));
       ctx.stroke();
     }
 
     // Clave de SOL
     ctx.fillStyle    = cssVar('--staff-clef');
     ctx.font         = 'bold 46px serif';
+    ctx.textAlign    = 'left';
     ctx.textBaseline = 'alphabetic';
     ctx.fillText('𝄞', ML - 50, sY(r, 0) + 38);
 
@@ -163,7 +232,7 @@ function drawStaff() {
     ctx.fillText(String(state.timeSignature.num), ML - 14, sY(r, 1) + 2);
     ctx.fillText(String(state.timeSignature.den), ML - 14, sY(r, 3) + 2);
 
-    // Divisores de compás
+    // Divisores de compás (rejilla fija)
     ctx.strokeStyle = cssVar('--staff-bar');
     ctx.lineWidth   = 0.8;
     for (let b = 1; ; b++) {
@@ -180,48 +249,20 @@ function drawStaff() {
     ctx.strokeStyle = cssVar('--staff-clef');
     ctx.lineWidth   = 1.4;
     ctx.beginPath();
-    ctx.moveTo(canvas.width - MR, sY(r, 0));
-    ctx.lineTo(canvas.width - MR, sY(r, 4));
+    ctx.moveTo(W - MR, sY(r, 0));
+    ctx.lineTo(W - MR, sY(r, 4));
     ctx.stroke();
-
-    // ── Cursor de posición ─────────────────────────────────
-    if (cursorX >= ML && cursorX <= canvas.width - MR && cursorRow === r) {
-      ctx.save();
-      ctx.strokeStyle = cssVar('--accent') || '#4A90D9';
-      ctx.lineWidth   = 1;
-      ctx.globalAlpha = 0.45;
-      ctx.setLineDash([4, 3]);
-      ctx.beginPath();
-      ctx.moveTo(cursorX, sY(r, 0) - 8);
-      ctx.lineTo(cursorX, sY(r, 4) + 8);
-      ctx.stroke();
-      ctx.restore();
-
-      // Etiqueta de nota bajo la línea
-      const noteAtCursor = yToNote(cursorY, r);
-      if (noteAtCursor) {
-        ctx.save();
-        ctx.font         = `500 10px ${cssVar('--font-sans') || 'sans-serif'}`;
-        ctx.textAlign    = 'center';
-        ctx.textBaseline = 'top';
-        ctx.fillStyle    = cssVar('--accent') || '#4A90D9';
-        ctx.globalAlpha  = 0.7;
-        ctx.fillText(NOTE_DISPLAY[noteAtCursor] || noteAtCursor, cursorX, sY(r, 4) + 14);
-        ctx.restore();
-      }
-    }
-
-  } // ← cierre del for
-} // ← cierre de drawStaff
+  }
+}
 
 // ── Dibuja una nota (o silencio) ──────────────────────────────
-function drawNote(n, x, row, sel, noteIdx) {
-  const isActive  = (noteIdx === activeNoteIdx);
-  const noteColor = isActive
-    ? '#E05A00'                        // naranja: activa (tocando ahora)
-    : sel
-      ? cssVar('--note-selected')      // rojo: seleccionada por el usuario
-      : (n.rest ? cssVar('--note-rest') : cssVar('--note-normal'));
+function drawNote(n, x, row, { selected = false, isActive = false, ghost = false } = {}) {
+  const noteColor = ghost
+    ? (fitsInCurrentMeasure(n.dur, n.dotted) ? (cssVar('--accent') || '#5B6CFF')
+                                             : (cssVar('--danger') || '#E5484D'))
+    : isActive ? (cssVar('--note-active') || '#FF8A3D')
+    : selected ? cssVar('--note-selected')
+    : (n.rest ? cssVar('--note-rest') : cssVar('--note-normal'));
 
   ctx.fillStyle   = noteColor;
   ctx.strokeStyle = noteColor;
@@ -230,33 +271,30 @@ function drawNote(n, x, row, sel, noteIdx) {
     ctx.font         = '30px serif';
     ctx.textAlign    = 'center';
     ctx.textBaseline = 'alphabetic';
-    ctx.fillText(
-      { TT: '𝄻', DT: '𝄼', T: '𝄽', MT: '𝄾', CT: '𝄿' }[n.dur] || '𝄽',
-      x, sY(row, 2) + 4
-    );
+    ctx.fillText(REST_GLYPHS[n.dur] || '𝄽', x, sY(row, 2) + 4);
     if (n.dotted) {
       ctx.beginPath(); ctx.arc(x + 14, sY(row, 2) - 4, 1.8, 0, Math.PI * 2); ctx.fill();
     }
     return;
   }
 
-  const y     = noteToY(n.note, row);
-  const t0    = sY(row, 0);
-  const t4    = sY(row, 4);
-  const slot  = NOTE_SLOT[n.note] !== undefined ? NOTE_SLOT[n.note] : 0;
+  const y      = noteToY(n.note, row);
+  const t0     = sY(row, 0);
+  const t4     = sY(row, 4);
+  const slot   = NOTE_SLOT[n.note] !== undefined ? NOTE_SLOT[n.note] : 0;
   const stemUp = slot < 4;
 
   // Líneas auxiliares
-  ctx.strokeStyle = cssVar('--ledger-line');
+  ctx.strokeStyle = ghost ? noteColor : cssVar('--ledger-line');
   ctx.lineWidth   = 0.8;
   if (y < t0 - SS / 2) {
     for (let ly = t0 - SS; ly >= y - SS / 2; ly -= SS) {
-      ctx.beginPath(); ctx.moveTo(x - 8, ly); ctx.lineTo(x + 8, ly); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(x - 9, ly); ctx.lineTo(x + 9, ly); ctx.stroke();
     }
   }
   if (y > t4 + SS / 2) {
     for (let ly = t4 + SS; ly <= y + SS / 2; ly += SS) {
-      ctx.beginPath(); ctx.moveTo(x - 8, ly); ctx.lineTo(x + 8, ly); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(x - 9, ly); ctx.lineTo(x + 9, ly); ctx.stroke();
     }
   }
 
@@ -286,12 +324,12 @@ function drawNote(n, x, row, sel, noteIdx) {
       const dir = stemUp ? 1 : -1;
       ctx.beginPath();
       ctx.moveTo(sx, sy2 + dir * 2);
-      ctx.quadraticCurveTo(sx + 10 , sy2 + 9 * dir, sx + 4  , sy2 + 18 * dir);
+      ctx.quadraticCurveTo(sx + 10, sy2 + 9 * dir, sx + 4, sy2 + 18 * dir);
       ctx.stroke();
       if (n.dur === 'CT') {
         ctx.beginPath();
-        ctx.moveTo(sx, sy2 + 8 * dir );
-        ctx.quadraticCurveTo(sx + 9 , sy2 + 16 * dir, sx + 2 , sy2 + 24 * dir);
+        ctx.moveTo(sx, sy2 + 8 * dir);
+        ctx.quadraticCurveTo(sx + 9, sy2 + 16 * dir, sx + 2, sy2 + 24 * dir);
         ctx.stroke();
       }
     }
@@ -302,35 +340,99 @@ function drawNote(n, x, row, sel, noteIdx) {
   }
 
   if (n.accidental === 'sharp' || n.accidental === 'flat') {
-    ctx.fillStyle    = noteColor;
-    ctx.font         = '11px serif';
+    ctx.font         = '12px serif';
     ctx.textAlign    = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(n.accidental === 'sharp' ? '♯' : '♭', x - 13, y);
   }
 
-  ctx.font         = `600 11px ${cssVar('--font-sans') || 'sans-serif'}`;
-  ctx.textAlign    = 'center';
-  ctx.textBaseline = 'top';
-  ctx.fillStyle = isActive
-    ? '#E05A00'
-    : sel
-      ? cssVar('--note-selected')
-      : cssVar('--note-label');
-  const accSuffix  = n.accidental === 'sharp' ? '#' : n.accidental === 'flat' ? 'b' : '';
-  ctx.fillText(NOTE_DISPLAY[n.note] + accSuffix, x, sY(row, 4) + 35);
+  // Etiqueta bajo el pentagrama (no para fantasma)
+  if (!ghost) {
+    ctx.font         = `600 11px ${cssVar('--font-sans') || 'sans-serif'}`;
+    ctx.textAlign    = 'center';
+    ctx.textBaseline = 'top';
+    ctx.fillStyle    = isActive ? (cssVar('--note-active') || '#FF8A3D')
+                     : selected ? cssVar('--note-selected')
+                     : cssVar('--note-label');
+    const accSuffix = n.accidental === 'sharp' ? '#' : n.accidental === 'flat' ? 'b' : '';
+    ctx.fillText(NOTE_DISPLAY[n.note] + accSuffix, x, sY(row, 4) + 38);
+  }
 
   ctx.lineWidth    = 0.8;
   ctx.textAlign    = 'left';
   ctx.textBaseline = 'alphabetic';
 }
 
-// ── Hit-test: qué nota está en (cx, cy) ───────────────────────
-function noteAt(cx, cy) {
-  const layout    = buildLayout();
-  const rowOffset = state.currentPage * RPP;
+// ── Nota fantasma: previsualiza la herramienta bajo el cursor ──
+function drawGhost(layoutItems, rowOffset) {
+  if (cursorRow < 0 || cursorX < ML || cursorX > W - MR) return;
+  if (activeNoteIdx >= 0) return; // no durante reproducción
 
-  for (const { note, x, row, noteIdx } of layout) {
+  // No dibujar fantasma encima de una nota existente
+  if (noteAtFromLayout(layoutItems, cursorX, cursorY, rowOffset) >= 0) return;
+
+  const t = state.activeTool;
+  const ghostNote = {
+    note:       yToNote(cursorY, cursorRow),
+    dur:        t.dur,
+    dotted:     t.dotted,
+    rest:       t.rest,
+    accidental: t.rest ? 'none' : state.activeAccidental,
+  };
+
+  ctx.save();
+  ctx.globalAlpha = 0.38;
+  drawNote(ghostNote, cursorX, cursorRow, { ghost: true });
+  ctx.restore();
+
+  // Etiqueta junto al fantasma
+  if (!t.rest) {
+    const y = noteToY(ghostNote.note, cursorRow);
+    ctx.save();
+    ctx.font         = `600 10px ${cssVar('--font-sans') || 'sans-serif'}`;
+    ctx.textAlign    = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle    = cssVar('--accent') || '#5B6CFF';
+    ctx.globalAlpha  = 0.85;
+    const acc = ghostNote.accidental === 'sharp' ? '#'
+              : ghostNote.accidental === 'flat' ? 'b' : '';
+    ctx.fillText(NOTE_DISPLAY[ghostNote.note] + acc, cursorX + 16, y);
+    ctx.restore();
+  }
+}
+
+// ── Cabezal de reproducción ───────────────────────────────────
+function drawPlayhead(rowOffset) {
+  if (!playhead) return;
+  const pageRow = playhead.row - rowOffset;
+  if (pageRow < 0 || pageRow >= RPP) return;
+
+  const accent = cssVar('--accent') || '#5B6CFF';
+  ctx.save();
+  ctx.strokeStyle = accent;
+  ctx.lineWidth   = 2;
+  ctx.shadowColor = accent;
+  ctx.shadowBlur  = 6;
+  ctx.beginPath();
+  ctx.moveTo(playhead.x, sY(pageRow, 0) - 14);
+  ctx.lineTo(playhead.x, sY(pageRow, 4) + 14);
+  ctx.stroke();
+
+  // Triángulo superior
+  ctx.shadowBlur = 0;
+  ctx.fillStyle  = accent;
+  ctx.beginPath();
+  ctx.moveTo(playhead.x - 5, sY(pageRow, 0) - 20);
+  ctx.lineTo(playhead.x + 5, sY(pageRow, 0) - 20);
+  ctx.lineTo(playhead.x, sY(pageRow, 0) - 12);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+}
+
+// ── Hit-test: qué nota está en (cx, cy) ───────────────────────
+function noteAtFromLayout(items, cx, cy, rowOffset) {
+  for (const { note, x, row, noteIdx } of items) {
     const pageRow = row - rowOffset;
     if (pageRow < 0 || pageRow >= RPP) continue;
     const y = note.rest ? sY(pageRow, 2) : noteToY(note.note, pageRow);
@@ -339,37 +441,55 @@ function noteAt(cx, cy) {
   return -1;
 }
 
+export function noteAt(cx, cy) {
+  const { items } = buildLayout();
+  return noteAtFromLayout(items, cx, cy, state.currentPage * RPP);
+}
+
 // ── Render principal ──────────────────────────────────────────
-function render() {
+export function render() {
   calcCanvas();
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.clearRect(0, 0, W, H);
 
   ctx.fillStyle = cssVar('--bg-score');
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.fillRect(0, 0, W, H);
 
-  const layout    = buildLayout();
-  const maxRow    = layout.length > 0 ? Math.max(...layout.map(l => l.row)) : 0;
-  const pg        = Math.max(1, Math.ceil((maxRow + 1) / RPP));
+  const { items, boxes } = buildLayout();
+  const maxRow = items.length > 0 ? Math.max(...items.map(l => l.row)) : 0;
+  const pg     = Math.max(1, Math.ceil((maxRow + 1) / RPP));
 
   if (pg !== state.pages) {
     state.pages = pg;
     if (state.currentPage >= pg) state.currentPage = pg - 1;
   }
 
+  const rowOffset = state.currentPage * RPP;
+
+  drawMeasureBackgrounds(boxes, rowOffset);
   drawStaff();
 
-  const rowOffset = state.currentPage * RPP;
-  for (const { note, x, row, noteIdx } of layout) {
+  for (const { note, x, row, noteIdx } of items) {
     const pageRow = row - rowOffset;
     if (pageRow < 0 || pageRow >= RPP) continue;
-    drawNote(note, x, pageRow, noteIdx === state.selectedNote, noteIdx);
+    drawNote(note, x, pageRow, {
+      selected: noteIdx === state.selectedNote,
+      isActive: noteIdx === activeNoteIdx,
+    });
   }
 
-  document.getElementById('page-ind').textContent =
-    `Pág ${state.currentPage + 1}/${state.pages}`;
+  drawGhost(items, rowOffset);
+  drawPlayhead(rowOffset);
 
-  if (typeof updateStatus   === 'function') updateStatus();
-  if (typeof updateCodePanel === 'function') updateCodePanel();
+  for (const fn of afterRenderFns) fn();
 }
 
-render();
+// ── Render diferido a un frame (para mousemove/resize) ────────
+let _renderPending = false;
+export function requestRender() {
+  if (_renderPending) return;
+  _renderPending = true;
+  requestAnimationFrame(() => {
+    _renderPending = false;
+    render();
+  });
+}

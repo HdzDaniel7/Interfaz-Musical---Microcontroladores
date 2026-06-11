@@ -1,8 +1,12 @@
 /* ============================================================
    midi.js — Generación de archivo MIDI desde la partitura
-   ============================================================
    MIDI formato 0 (single track), sin dependencias externas.
    ============================================================ */
+
+import { state } from './state.js';
+import { resolvePitch } from './music.js';
+import { DUR_BEATS } from './constants.js';
+import { safeFileName } from './codegen/common.js';
 
 // ── Helpers para escribir bytes MIDI ─────────────────────────
 
@@ -36,68 +40,31 @@ function writeVLQ(arr, val) {
 }
 
 // ── Conversión nota → número MIDI ─────────────────────────────
-// MIDI: DO4 = 60, cada semitono = +1
-// En tu sistema: z2=5 es la octava base
-// DO en octava z=5 → MIDI 60 + (5-4)*12 = 72 (DO5)
-// Ajustamos para que z2=5 suene en rango natural de piano
-
-const ENUM_TO_SEMITONE = {
-  DO: 0, DOs: 1, RE: 2, REs: 3, MI: 4, FA: 5,
-  FAs: 6, SOL: 7, SOLs: 8, LA: 9, LAs: 10, SI: 11,
-};
-
-function noteToMidi(noteName, accidental, z2val, octaveOff) {
-  // Obtener nombre base sin sufijo de octava
-  let base = noteName;
-  let oct  = octaveOff || 0;
-
-  if (noteName.endsWith('M')) { base = noteName.slice(0, -1); oct += 1; }
-  if (noteName.endsWith('m')) { base = noteName.slice(0, -1); oct -= 1; }
-
-  // Resolver accidental → nombre del enum
-  let enumName = base;
-  if (accidental === 'sharp' && SHARP_NAME && SHARP_NAME[base]) {
-    enumName = SHARP_NAME[base];
-  } else if (accidental === 'flat' && FLAT_TO_SHARP && FLAT_TO_SHARP[base]) {
-    enumName = FLAT_TO_SHARP[base];
-  }
-
-  const semi = ENUM_TO_SEMITONE[enumName] ?? 0;
-
-  // MIDI note = 12 * (octava + 1) + semitono
-  // z2=5 → octava MIDI 5 → DO5 = 72
-  // Restamos 1 para alinear con rango de piano estándar
-  const midiNote = 12 * (z2val + oct) + semi;
+// resolvePitch ya maneja accidentales y cambios de octava
+// (SI♯ → DO octava arriba, DO♭ → SI octava abajo, etc.)
+function noteToMidi(noteName, accidental, z2val) {
+  const { pc, octave } = resolvePitch(noteName, accidental);
+  const midiNote = 12 * (z2val + octave) + pc;
   return Math.max(0, Math.min(127, midiNote));
 }
 
-// ── Duración en ticks MIDI ────────────────────────────────────
-// Usamos 480 ticks por negra (PPQ estándar)
+// ── Duración en ticks MIDI (480 ticks por negra, PPQ estándar) ─
 const PPQ = 480;
 
-const DUR_TICKS = {
-  TT: PPQ * 4,    // redonda
-  DT: PPQ * 2,    // blanca
-  T:  PPQ,        // negra
-  MT: PPQ / 2,    // corchea
-  CT: PPQ / 4,    // semicorchea
-};
-
 function noteTicks(dur, dotted) {
-  const base = DUR_TICKS[dur] || PPQ;
-  return dotted ? Math.floor(base * 1.5) : base;
+  const beats = DUR_BEATS[dur] || 1;
+  const ticks = beats * PPQ;
+  return dotted ? Math.floor(ticks * 1.5) : ticks;
 }
 
 // ── Generar archivo MIDI ──────────────────────────────────────
-function exportMidi() {
-  const notes  = state.notes;
-  const bpm    = parseInt(document.getElementById('bpm').value) || 120;
-  const z2val  = state.z2;
+// Retorna true si exportó, false si no había notas.
+export function exportMidi() {
+  const notes = state.notes;
+  const bpm   = state.bpm || 120;
+  const z2val = state.z2;
 
-  if (!notes.length) {
-    alert('No hay notas en la partitura.');
-    return;
-  }
+  if (!notes.length) return false;
 
   // Microsegundos por negra = 60,000,000 / BPM
   const tempo = Math.floor(60000000 / bpm);
@@ -105,7 +72,6 @@ function exportMidi() {
   const track = [];
 
   // ── Evento de tempo ───────────────────────────────────────
-  // Delta 0, meta event FF 51 03, tempo en 3 bytes
   writeVLQ(track, 0);
   writeByte(track, 0xFF); // meta event
   writeByte(track, 0x51); // tempo
@@ -115,8 +81,8 @@ function exportMidi() {
   writeByte(track, tempo & 0xFF);
 
   // ── Evento de nombre de pista ─────────────────────────────
-  const trackName  = (state.title || 'Mi_Cancion').slice(0, 32);
-  const nameBytes  = Array.from(trackName).map(c => c.charCodeAt(0));
+  const trackName = (state.title || 'Mi_Cancion').slice(0, 32);
+  const nameBytes = Array.from(trackName).map(c => c.charCodeAt(0) & 0x7F);
   writeVLQ(track, 0);
   writeByte(track, 0xFF);
   writeByte(track, 0x03);
@@ -128,10 +94,7 @@ function exportMidi() {
   writeByte(track, 0xC0); // program change canal 0
   writeByte(track, 0);    // piano acústico
 
-  // ── Notas ─────────────────────────────────────────────────
-  // MIDI necesita Note On y Note Off separados con delta times
-  // Construimos una lista de eventos y los ordenamos por tick
-
+  // ── Notas: eventos Note On / Note Off ordenados por tick ──
   const events = [];
   let currentTick = 0;
 
@@ -139,9 +102,8 @@ function exportMidi() {
     const ticks = noteTicks(n.dur, n.dotted);
 
     if (!n.rest) {
-      const midiNote = noteToMidi(n.note, n.accidental, z2val, n.octaveOffset || 0);
-      // Note On al inicio
-      events.push({ tick: currentTick,         type: 'on',  note: midiNote, vel: 80 });
+      const midiNote = noteToMidi(n.note, n.accidental, z2val);
+      events.push({ tick: currentTick, type: 'on', note: midiNote, vel: 80 });
       // Note Off antes del siguiente (articulación 5%)
       events.push({ tick: currentTick + Math.floor(ticks * 0.95), type: 'off', note: midiNote, vel: 0 });
     }
@@ -184,7 +146,7 @@ function exportMidi() {
   const header = [];
 
   // MThd — header chunk
-  [0x4D,0x54,0x68,0x64].forEach(b => writeByte(header, b)); // "MThd"
+  [0x4D, 0x54, 0x68, 0x64].forEach(b => writeByte(header, b)); // "MThd"
   writeUint32(header, 6);     // longitud del header = 6
   writeUint16(header, 0);     // formato 0 (single track)
   writeUint16(header, 1);     // número de tracks
@@ -192,20 +154,17 @@ function exportMidi() {
 
   // MTrk — track chunk
   const trackHeader = [];
-  [0x4D,0x54,0x72,0x6B].forEach(b => writeByte(trackHeader, b)); // "MTrk"
+  [0x4D, 0x54, 0x72, 0x6B].forEach(b => writeByte(trackHeader, b)); // "MTrk"
   writeUint32(trackHeader, track.length);
 
-  const midi = new Uint8Array([
-    ...header,
-    ...trackHeader,
-    ...track,
-  ]);
+  const midi = new Uint8Array([...header, ...trackHeader, ...track]);
 
   // ── Descargar ─────────────────────────────────────────────
   const blob = new Blob([midi], { type: 'audio/midi' });
   const a    = document.createElement('a');
   a.href     = URL.createObjectURL(blob);
-  a.download = (state.title || 'cancion').replace(/\s+/g, '_') + '.mid';
+  a.download = safeFileName(state.title) + '.mid';
   a.click();
   URL.revokeObjectURL(a.href);
+  return true;
 }

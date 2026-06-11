@@ -1,123 +1,184 @@
 /* ============================================================
    audio.js — Reproducción con Web Audio API
+   Oscilador cuadrado (timbre buzzer) + rampas anti-click,
+   playhead animado con seguimiento de página y preview de notas.
    ============================================================ */
 
-let isPlaying     = false;
-let playAudioCtx  = null;
-let activeNoteIdx = -1;
-let activeGain    = null;
-let currentVolume = 0.07;
-const _noteTimers = [];
+import { state } from './state.js';
+import { noteFreq, noteDurationBeats } from './music.js';
+import { RPP } from './constants.js';
+import {
+  render, setActiveNote, setPlayhead, buildLayout,
+} from './renderer.js';
 
-function getVolume() {
-  return currentVolume;
+let audioCtx      = null;  // contexto persistente (se reutiliza)
+let masterGain    = null;  // volumen durante la reproducción actual
+let currentOsc    = null;
+let currentVolume = 0.07;
+let _playing      = false;
+let _rafId        = 0;
+
+const RAMP = 0.004; // rampa anti-click (4 ms)
+
+export function isPlaying() { return _playing; }
+
+function ensureCtx() {
+  if (!audioCtx) {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  }
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+  return audioCtx;
 }
 
-function playScore() {
-  if (isPlaying || !state.notes.length) return;
+// ── Volumen ───────────────────────────────────────────────────
+export function setVolume(v) {
+  currentVolume = v;
+  if (masterGain && audioCtx) {
+    masterGain.gain.setTargetAtTime(v, audioCtx.currentTime, 0.02);
+  }
+}
 
-  const bpm     = parseFloat(document.getElementById('bpm').value) || 120;
-  const beatSec = 60 / bpm;
-  const msToSec = beatSec / 400;
+export function getVolume() { return currentVolume; }
 
-  isPlaying     = true;
-  activeNoteIdx = -1;
-  _noteTimers.length = 0;
+// ── Preview corto de una nota (al insertar o arrastrar) ───────
+export function previewNote(noteName, accidental, durMs = 150) {
+  try {
+    const ctx  = ensureCtx();
+    const osc  = ctx.createOscillator();
+    const gain = ctx.createGain();
 
-  playAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    osc.type            = 'square';
+    osc.frequency.value = noteFreq(noteName, accidental, state.z2);
+    gain.gain.value     = 0;
 
-  const osc        = playAudioCtx.createOscillator();
-  const gain       = playAudioCtx.createGain();   // articulación (0/1)
-  const masterGain = playAudioCtx.createGain();   // volumen real
-  activeGain       = masterGain;                  // ← apunta al master, no al gain
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+
+    const t   = ctx.currentTime;
+    const end = t + durMs / 1000;
+    gain.gain.setValueAtTime(0, t);
+    gain.gain.linearRampToValueAtTime(currentVolume, t + RAMP);
+    gain.gain.setValueAtTime(currentVolume, end - 0.02);
+    gain.gain.linearRampToValueAtTime(0, end);
+
+    osc.start(t);
+    osc.stop(end + 0.01);
+    osc.onended = () => { osc.disconnect(); gain.disconnect(); };
+  } catch (e) { /* audio no disponible — ignorar */ }
+}
+
+// ── Reproducción de la partitura completa ─────────────────────
+export function playScore() {
+  if (_playing || !state.notes.length) return;
+
+  const ctx     = ensureCtx();
+  const beatSec = 60 / (state.bpm || 120);
+
+  _playing = true;
+
+  const osc  = ctx.createOscillator();
+  const gain = ctx.createGain();      // articulación (envolvente por nota)
+  masterGain = ctx.createGain();      // volumen del usuario
+  currentOsc = osc;
 
   osc.connect(gain);
   gain.connect(masterGain);
-  masterGain.connect(playAudioCtx.destination);   // ← solo una salida, sin bypass
+  masterGain.connect(ctx.destination);
 
   osc.type              = 'square';
-  gain.gain.value       = 1;
-  masterGain.gain.value = getVolume();
-  osc.start();
+  gain.gain.value       = 0;
+  masterGain.gain.value = currentVolume;
 
-  const startTime = playAudioCtx.currentTime;
-  let t           = startTime;
+  // ── Programar todas las notas + construir agenda visual ────
+  const t0       = ctx.currentTime + 0.06;
+  const schedule = [];
+  let t = t0;
 
   state.notes.forEach((n, idx) => {
-    const baseDur = DUR_MS[n.dur] * msToSec;
-    const dur     = n.dotted ? baseDur * 1.5 : baseDur;
-
-    const msFromNow = (t - startTime) * 1000;
-
-    const timer = setTimeout(() => {
-      if (!isPlaying) return;
-      activeNoteIdx = idx;
-      render();
-    }, msFromNow);
-    _noteTimers.push(timer);
+    const dur = noteDurationBeats(n) * beatSec;
 
     if (n.rest) {
       gain.gain.setValueAtTime(0, t);
-      gain.gain.setValueAtTime(1, t + dur);
     } else {
-      let baseName, octaveOff;
-      if (n.note.endsWith('M'))      { baseName = n.note.slice(0, -1); octaveOff =  1; }
-      else if (n.note.endsWith('m')) { baseName = n.note.slice(0, -1); octaveOff = -1; }
-      else                           { baseName = n.note;              octaveOff =  0; }
-
-      const enumName = codeNoteName(baseName, n.accidental);
-      const freq     = noteFreq(enumName, state.z2, octaveOff);
+      const freq  = noteFreq(n.note, n.accidental, state.z2);
+      const durOn = Math.max(dur * 0.95, 0.03);
 
       osc.frequency.setValueAtTime(freq, t);
-      gain.gain.setValueAtTime(1, t);
-      gain.gain.setValueAtTime(0, t + dur * 0.95);
-      gain.gain.setValueAtTime(1, t + dur);
+      gain.gain.setValueAtTime(0, t);
+      gain.gain.linearRampToValueAtTime(1, t + RAMP);
+      gain.gain.setValueAtTime(1, Math.max(t + RAMP, t + durOn - RAMP));
+      gain.gain.linearRampToValueAtTime(0, t + durOn);
     }
 
+    schedule.push({ idx, start: t, end: t + dur });
     t += dur;
   });
 
-  const totalMs = (t - startTime) * 1000;
-  const endTimer = setTimeout(() => {
-    isPlaying     = false;
-    activeNoteIdx = -1;
-    render();
-  }, totalMs + 100);
-  _noteTimers.push(endTimer);
-
+  osc.start(t0);
   osc.stop(t + 0.05);
-  osc.onended = () => {
-    isPlaying     = false;
-    activeNoteIdx = -1;
-    render();
+
+  // ── Playhead animado + seguimiento de página ───────────────
+  const { items } = buildLayout(); // snapshot (las notas no cambian al reproducir)
+  const byIdx = new Map(items.map(it => [it.noteIdx, it]));
+  let cursor = 0;
+
+  const tick = () => {
+    if (!_playing) return;
+    const now = ctx.currentTime;
+
+    if (now >= t) { finishPlayback(); return; }
+
+    while (cursor < schedule.length - 1 && now >= schedule[cursor].end) cursor++;
+    const ev = schedule[cursor];
+
+    if (ev && now >= ev.start) {
+      const item = byIdx.get(ev.idx);
+      if (item) {
+        setActiveNote(ev.idx);
+
+        // Seguir la página de la nota activa
+        const page = Math.floor(item.row / RPP);
+        if (page !== state.currentPage && page < state.pages) {
+          state.currentPage = page;
+        }
+
+        const frac = Math.min(1, (now - ev.start) / (ev.end - ev.start));
+        setPlayhead({ x: item.x - item.w / 2 + frac * item.w, row: item.row });
+      }
+      render();
+    }
+
+    _rafId = requestAnimationFrame(tick);
   };
+
+  osc.onended = () => { if (_playing) finishPlayback(); };
+  _rafId = requestAnimationFrame(tick);
 }
 
-function stopScore() {
-  _noteTimers.forEach(id => clearTimeout(id));
-  _noteTimers.length = 0;
-
-  if (playAudioCtx) {
-    try { playAudioCtx.close(); } catch (e) {}
-    playAudioCtx = null;
-  }
-
-  isPlaying     = false;
-  activeNoteIdx = -1;
-  activeGain    = null;
+function finishPlayback() {
+  cancelAnimationFrame(_rafId);
+  _playing   = false;
+  currentOsc = null;
+  masterGain = null;
+  setActiveNote(-1);
+  setPlayhead(null);
   render();
 }
 
-document.addEventListener('DOMContentLoaded', () => {
-  const slider = document.getElementById('volume-slider');
-  const label  = document.getElementById('volume-label');
-  if (!slider || !label) return;
-
-  slider.addEventListener('input', () => {
-    currentVolume = parseFloat(slider.value) / 1000;
-    label.textContent = slider.value + '%';
-    if (activeGain && playAudioCtx) {
-      activeGain.gain.setValueAtTime(currentVolume, playAudioCtx.currentTime);
+export function stopScore() {
+  if (!_playing) {
+    setActiveNote(-1);
+    setPlayhead(null);
+    render();
+    return;
+  }
+  try {
+    if (currentOsc) {
+      currentOsc.onended = null;
+      currentOsc.stop();
+      currentOsc.disconnect();
     }
-  });
-});
+    if (masterGain) masterGain.disconnect();
+  } catch (e) { /* ya detenido */ }
+  finishPlayback();
+}
