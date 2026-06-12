@@ -51,10 +51,11 @@ function noteToMidi(noteName, accidental, z2val) {
 // ── Duración en ticks MIDI (480 ticks por negra, PPQ estándar) ─
 const PPQ = 480;
 
-function noteTicks(dur, dotted) {
-  const beats = DUR_BEATS[dur] || 1;
-  const ticks = beats * PPQ;
-  return dotted ? Math.floor(ticks * 1.5) : ticks;
+function noteTicks(n) {
+  let ticks = (DUR_BEATS[n.dur] || 1) * PPQ;
+  if (n.dotted)  ticks *= 1.5;
+  if (n.triplet) ticks = ticks * 2 / 3;
+  return Math.round(ticks);
 }
 
 // ── Generar archivo MIDI ──────────────────────────────────────
@@ -105,7 +106,7 @@ export function exportMidi() {
     if (consumed.has(idx)) return;
     const n       = notes[idx];
     const members = chains.get(idx) || [idx];
-    const ticks   = members.reduce((s, k) => s + noteTicks(notes[k].dur, notes[k].dotted), 0);
+    const ticks   = members.reduce((s, k) => s + noteTicks(notes[k]), 0);
 
     if (!n.rest) {
       const midiNote  = noteToMidi(n.note, n.accidental, z2val);

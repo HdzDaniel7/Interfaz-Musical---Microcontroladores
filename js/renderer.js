@@ -414,13 +414,14 @@ function drawGhost(layoutItems, rowOffset) {
     note:       yToNote(cursorY, cursorRow),
     dur:        t.dur,
     dotted:     t.dotted,
+    triplet:    t.triplet,
     rest:       t.rest,
     accidental: t.rest ? 'none' : state.activeAccidental,
   };
 
   // Punto de inserción: ¿cabe ahí? + caret si es en medio
   const insertIdx = insertionIndexFromLayout(layoutItems, cursorX, cursorY, rowOffset);
-  const fits      = fitsAtIndex(insertIdx, t.dur, t.dotted);
+  const fits      = fitsAtIndex(insertIdx, t.dur, t.dotted, t.triplet);
 
   if (insertIdx < state.notes.length) {
     const target = layoutItems.find(it => it.noteIdx === insertIdx);
@@ -451,6 +452,15 @@ function drawGhost(layoutItems, rowOffset) {
   ctx.save();
   ctx.globalAlpha = 0.38;
   drawNote(ghostNote, cursorX, cursorRow, { ghost: true, fits });
+  // Indicador de tresillo sobre el fantasma
+  if (t.triplet) {
+    const gy = ghostNote.rest ? sY(cursorRow, 2) : noteToY(ghostNote.note, cursorRow);
+    ctx.font         = `italic 700 11px ${cssVar('--font-sans') || 'sans-serif'}`;
+    ctx.textAlign    = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle    = cssVar('--accent') || '#5B6CFF';
+    ctx.fillText('3', cursorX, gy - 40);
+  }
   ctx.restore();
 
   // Etiqueta junto al fantasma
@@ -547,6 +557,60 @@ function drawBeams(groups, rowOffset, selSet) {
         ctx.stroke();
       });
     }
+  }
+}
+
+// ── Tresillos: corchete con "3" sobre cada grupo ──────────────
+// Las notas/silencios consecutivos con triplet se agrupan de a 3
+// (misma fila y mismo compás); cada grupo recibe su corchete.
+function computeTripletGroups(items) {
+  const groups = [];
+  let run = [];
+
+  const flushRun = () => {
+    for (let k = 0; k < run.length; k += 3) groups.push(run.slice(k, k + 3));
+    run = [];
+  };
+
+  for (const it of items) {
+    const prev   = run[run.length - 1];
+    const breaks = prev && (prev.row !== it.row || prev.measureIdx !== it.measureIdx);
+    if (!it.note.triplet || breaks) flushRun();
+    if (it.note.triplet) run.push(it);
+  }
+  flushRun();
+  return groups;
+}
+
+function drawTripletBrackets(groups, rowOffset) {
+  for (const g of groups) {
+    const pageRow = g[0].row - rowOffset;
+    if (pageRow < 0 || pageRow >= RPP) continue;
+
+    const ys = g.map(it => it.note.rest ? sY(pageRow, 2) : noteToY(it.note.note, pageRow));
+    const avgSlot = g.reduce((s, it) =>
+      s + (it.note.rest ? 4 : (NOTE_SLOT[it.note.note] ?? 0)), 0) / g.length;
+    const up  = avgSlot < 4;             // plicas/barra hacia arriba
+    const top = Math.min(...ys);
+    const y   = up ? top - 40 : top - 14; // por encima de plicas o cabezas
+
+    const x0 = g[0].x - 8;
+    const x1 = g[g.length - 1].x + 8;
+    const mx = (x0 + x1) / 2;
+
+    ctx.save();
+    ctx.strokeStyle = ctx.fillStyle = cssVar('--note-label') || '#888';
+    ctx.lineWidth   = 1.1;
+    ctx.beginPath();
+    ctx.moveTo(x0, y + 4); ctx.lineTo(x0, y); ctx.lineTo(mx - 6, y);
+    ctx.moveTo(mx + 6, y); ctx.lineTo(x1, y); ctx.lineTo(x1, y + 4);
+    ctx.stroke();
+
+    ctx.font         = `italic 700 11px ${cssVar('--font-sans') || 'sans-serif'}`;
+    ctx.textAlign    = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('3', mx, y);
+    ctx.restore();
   }
 }
 
@@ -736,6 +800,7 @@ export function render() {
   }
 
   drawBeams(beamGroups, rowOffset, selSet);
+  drawTripletBrackets(computeTripletGroups(items), rowOffset);
   drawTies(items, rowOffset);
   drawGhost(items, rowOffset);
   drawPlayhead(rowOffset);

@@ -14,8 +14,9 @@ export function stripMarkers(code) {
   return code.replace(/\x01\d+\x02/g, '').replace(/\x03/g, '');
 }
 
-// ── Expresión de duración (con puntillo si aplica) ────────────
+// ── Expresión de duración (con puntillo o tresillo si aplica) ─
 export function durExpr(n) {
+  if (n.triplet) return n.dotted ? n.dur : `(${n.dur} * 2 / 3)`;
   return n.dotted ? `(${n.dur} * 3 / 2)` : n.dur;
 }
 

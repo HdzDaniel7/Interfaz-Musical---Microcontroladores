@@ -20,7 +20,7 @@ export const state = {
   selection:     [],   // selección múltiple (incluye la primaria)
   history:       [],
   redoStack:     [],
-  activeTool:    { dur: 'T', rest: false, dotted: false },
+  activeTool:    { dur: 'T', rest: false, dotted: false, triplet: false },
   activeAccidental: 'none',
   // Código C adicional del usuario, por plantilla de MCU
   extraCode:     {},
@@ -97,6 +97,7 @@ function sanitizeNotes(raw) {
       note:       n.rest ? (n.note || 'SI') : n.note,
       dur:        n.dur,
       dotted:     !!n.dotted,
+      triplet:    !!n.triplet,
       rest:       !!n.rest,
       accidental: VALID_ACCIDENTALS.includes(n.accidental) ? n.accidental : 'none',
       tieToNext:  !!n.tieToNext,

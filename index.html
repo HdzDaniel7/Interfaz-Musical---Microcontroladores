@@ -77,6 +77,7 @@
         <button class="tool-btn" data-dur="MT" data-rest="0" title="Corchea (4)"><span class="sym">♪</span><span class="lbl">Corc</span></button>
         <button class="tool-btn" data-dur="CT" data-rest="0" title="Semicorchea (5)"><span class="sym">𝅘𝅥𝅯</span><span class="lbl">Semi</span></button>
         <button class="tool-btn dot-btn" id="dot-btn" title="Puntillo (.)"><span class="sym">•</span><span class="lbl">Punt</span></button>
+        <button class="tool-btn dot-btn" id="triplet-btn" title="Tresillo (T): 3 figuras en el tiempo de 2"><span class="sym">³</span><span class="lbl">Tres</span></button>
       </div>
 
       <div class="tool-group" role="group" aria-label="Silencios">
@@ -110,6 +111,9 @@
       </button>
       <button class="icon-btn" id="btn-tie" title="Ligar con la siguiente nota (L)" aria-label="Ligadura">
         <svg viewBox="0 0 24 24"><circle cx="5" cy="9" r="2.2" fill="currentColor" stroke="none"/><circle cx="19" cy="9" r="2.2" fill="currentColor" stroke="none"/><path d="M5 13c4 5 10 5 14 0"/></svg>
+      </button>
+      <button class="icon-btn" id="btn-triplet" title="Atresillar selección (T): 3 notas en el tiempo de 2" aria-label="Atresillar selección">
+        <svg viewBox="0 0 24 24"><circle cx="4" cy="18" r="2.2" fill="currentColor" stroke="none"/><circle cx="12" cy="18" r="2.2" fill="currentColor" stroke="none"/><circle cx="20" cy="18" r="2.2" fill="currentColor" stroke="none"/><path d="M2 10V7h8M14 10V7h8"/><text x="12" y="10" font-size="10" font-weight="700" fill="currentColor" stroke="none" text-anchor="middle">3</text></svg>
       </button>
       <div class="divider"></div>
 
@@ -266,6 +270,7 @@
               <span class="dur-sym">♪</span><code class="dur-code">MT</code><span class="dur-name">Corchea</span><span class="dur-val">T÷2</span>
               <span class="dur-sym">𝅘𝅥𝅯</span><code class="dur-code">CT</code><span class="dur-name">Semicorchea</span><span class="dur-val">T÷4</span>
             </div>
+            <p class="note-small">Tresillo (³): la figura dura ⅔ de lo normal — tres notas suenan en el tiempo de dos (3 corcheas = 1 negra).</p>
           </section>
 
           <section class="prop-section">
@@ -286,6 +291,7 @@
               <kbd>R</kbd><span>Nota ↔ silencio</span>
               <kbd>L</kbd><span>Ligar con la siguiente</span>
               <kbd>.</kbd><span>Puntillo</span>
+              <kbd>T</kbd><span>Tresillo (selección o herramienta)</span>
               <kbd>Espacio</kbd><span>Reproducir / detener</span>
               <kbd>← →</kbd><span>Navegar notas</span>
               <kbd>↑ ↓</kbd><span>Transponer nota</span>

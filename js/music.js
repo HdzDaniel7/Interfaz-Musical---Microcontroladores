@@ -70,9 +70,12 @@ export function beatsPerMeasure() {
 }
 
 // Duración en beats de negra de una nota
+// Tresillo: ×2/3 — tres figuras suenan en el tiempo de dos.
 export function noteDurationBeats(note) {
-  const base = DUR_BEATS[note.dur] || 1;
-  return note.dotted ? base * 1.5 : base;
+  let b = DUR_BEATS[note.dur] || 1;
+  if (note.dotted)  b *= 1.5;
+  if (note.triplet) b *= 2 / 3;
+  return b;
 }
 
 // ── Analiza las notas y devuelve grupos por compás ─────────────
@@ -141,10 +144,10 @@ export function usedBeatsInOpenMeasure() {
 
 // ── ¿Cabe la nota en el compás actualmente abierto? ───────────
 // Modo ESTRICTO: bloquea si la nota no cabe.
-export function fitsInCurrentMeasure(dur, dotted) {
+export function fitsInCurrentMeasure(dur, dotted, triplet = false) {
   const capacity = beatsPerMeasure();
   const used     = usedBeatsInOpenMeasure();
-  const newBeats = (DUR_BEATS[dur] || 1) * (dotted ? 1.5 : 1);
+  const newBeats = (DUR_BEATS[dur] || 1) * (dotted ? 1.5 : 1) * (triplet ? 2 / 3 : 1);
   return newBeats <= capacity - used + 0.001;
 }
 
@@ -227,20 +230,21 @@ export function expandedNoteIndices() {
 // Al final: chequeo estricto del compás abierto. En medio: se
 // permite siempre — la música refluye y los compases incompletos
 // quedan marcados en ámbar para guiar al usuario.
-export function fitsAtIndex(idx, dur, dotted) {
-  if (idx >= state.notes.length) return fitsInCurrentMeasure(dur, dotted);
+export function fitsAtIndex(idx, dur, dotted, triplet = false) {
+  if (idx >= state.notes.length) return fitsInCurrentMeasure(dur, dotted, triplet);
   return true;
 }
 
 // ── Duraciones disponibles para el compás actual ─────────────
 // Devuelve { TT: bool, …, TT_dot: bool, … }
-export function availableDurations() {
+export function availableDurations(triplet = false) {
   const capacity  = beatsPerMeasure();
   const used      = usedBeatsInOpenMeasure();
   const remaining = capacity - used;
+  const f         = triplet ? 2 / 3 : 1; // el puntillo excluye al tresillo
   const result    = {};
   for (const [dur, beats] of Object.entries(DUR_BEATS)) {
-    result[dur]          = beats       <= remaining + 0.001;
+    result[dur]          = beats * f   <= remaining + 0.001;
     result[dur + '_dot'] = beats * 1.5 <= remaining + 0.001;
   }
   return result;

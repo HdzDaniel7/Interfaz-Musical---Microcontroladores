@@ -157,9 +157,10 @@ function updateStatus() {
     const acc = sn.accidental === 'sharp' ? '♯' : sn.accidental === 'flat' ? '♭'
               : sn.accidental === 'natural' ? '♮' : '';
     const dot = sn.dotted ? '.' : '';
+    const tri = sn.triplet ? ' ³' : '';
     $('status-note').textContent = sn.rest
-      ? `Silencio ${sn.dur}${dot}`
-      : `${NOTE_DISPLAY[sn.note]}${acc}${dot} · ${sn.dur}`;
+      ? `Silencio ${sn.dur}${dot}${tri}`
+      : `${NOTE_DISPLAY[sn.note]}${acc}${dot} · ${sn.dur}${tri}`;
   } else {
     $('status-note').textContent = 'Sin selección';
   }
@@ -209,7 +210,7 @@ function updateRepeatList(measureCount) {
 
 // Deshabilitar duraciones que no caben en el compás actual
 function updateToolbarAvailability() {
-  const avail = availableDurations();
+  const avail = availableDurations(state.activeTool.triplet);
 
   // Atenuado = no cabe al FINAL de la partitura; sigue siendo
   // clicable porque puede caber en una inserción a media pieza.
@@ -251,9 +252,21 @@ function selectAccidental(acc) {
   requestRender();
 }
 
+// Puntillo y tresillo son mutuamente excluyentes en la herramienta
 function toggleDot() {
   state.activeTool.dotted = !state.activeTool.dotted;
+  if (state.activeTool.dotted) state.activeTool.triplet = false;
   $('dot-btn').classList.toggle('active', state.activeTool.dotted);
+  $('triplet-btn').classList.toggle('active', state.activeTool.triplet);
+  updateToolbarAvailability();
+  requestRender();
+}
+
+function toggleTripletTool() {
+  state.activeTool.triplet = !state.activeTool.triplet;
+  if (state.activeTool.triplet) state.activeTool.dotted = false;
+  $('dot-btn').classList.toggle('active', state.activeTool.dotted);
+  $('triplet-btn').classList.toggle('active', state.activeTool.triplet);
   updateToolbarAvailability();
   requestRender();
 }
@@ -331,6 +344,27 @@ function toggleTie() {
   const allTied = idxs.every(i => state.notes[i].tieToNext);
   for (const i of idxs) {
     state.notes[i] = { ...state.notes[i], tieToNext: !allTied };
+  }
+  afterNotesChanged();
+}
+
+// Atresillar la selección: alterna el flag triplet del rango.
+// Cada nota pasa a durar ⅔ — tres corcheas ocupan una negra.
+function tripletizeSelection() {
+  const idxs = selectedIndices().filter(i => state.notes[i]);
+  if (!idxs.length) {
+    showToast('Selecciona las notas que quieres atresillar', { type: 'warn', duration: 2200 });
+    return;
+  }
+  pushHistory();
+  const allTriplet = idxs.every(i => state.notes[i].triplet);
+  for (const i of idxs) {
+    state.notes[i] = {
+      ...state.notes[i],
+      triplet: !allTriplet,
+      // el tresillo reemplaza al puntillo
+      dotted:  allTriplet ? state.notes[i].dotted : false,
+    };
   }
   afterNotesChanged();
 }
@@ -427,7 +461,7 @@ function bindCanvas() {
 
     const t = state.activeTool;
     const insertIdx = insertionIndexAt(cx, cy);
-    if (!fitsAtIndex(insertIdx, t.dur, t.dotted)) {
+    if (!fitsAtIndex(insertIdx, t.dur, t.dotted, t.triplet)) {
       showToast('Esa figura no cabe en el compás actual', { type: 'warn', duration: 2000 });
       render();
       return;
@@ -438,6 +472,7 @@ function bindCanvas() {
       note:       yToNote(cy, row),
       dur:        t.dur,
       dotted:     t.dotted,
+      triplet:    t.triplet,
       rest:       t.rest,
       accidental: t.rest ? 'none' : state.activeAccidental,
     };
@@ -504,6 +539,7 @@ function bindToolbar() {
   });
 
   $('dot-btn').addEventListener('click', toggleDot);
+  $('triplet-btn').addEventListener('click', toggleTripletTool);
 
   document.querySelectorAll('.acc-btn').forEach(btn => {
     btn.addEventListener('click', () => selectAccidental(btn.dataset.acc));
@@ -613,6 +649,7 @@ function bindActions() {
   $('btn-redo').addEventListener('click', doRedo);
   $('btn-delete').addEventListener('click', doDelete);
   $('btn-tie').addEventListener('click', toggleTie);
+  $('btn-triplet').addEventListener('click', tripletizeSelection);
   $('btn-clear').addEventListener('click', doClearAll);
 
   $('btn-play').addEventListener('click', startPlayback);
@@ -862,6 +899,11 @@ function bindKeyboard() {
       case 'l':
       case 'L':
         toggleTie();
+        break;
+      case 't':
+      case 'T':
+        // Con selección: atresillar el rango; sin ella: herramienta
+        selectedIndices().length ? tripletizeSelection() : toggleTripletTool();
         break;
       default:
         if (KEY_TO_DUR[e.key]) selectTool(KEY_TO_DUR[e.key], state.activeTool.rest);
