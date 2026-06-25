@@ -226,6 +226,39 @@ export function expandedNoteIndices() {
   return out;
 }
 
+// ── Agenda de reproducción (compartida audio ↔ serial) ───────
+// Convierte la partitura en una lista plana de eventos en orden de
+// reproducción, con las repeticiones expandidas y las ligaduras ya
+// resueltas (las notas absorbidas no aparecen; la cabeza lleva la
+// duración sumada). Cada evento:
+//   { idx, rest, freq, durBeats, legato }
+//     freq     → Hz (0 en silencios), ya con la afinación del editor
+//     durBeats → duración en negras (multiplicar por 60/BPM = segundos)
+//     legato   → true si enlaza con la siguiente sin articular
+// La consumen audio.js (Web Audio) y serial.js (ESP32 por USB), así
+// ambos tocan exactamente la misma secuencia.
+export function buildSchedule(fromIdx = 0) {
+  const order    = expandedNoteIndices();
+  const startPos = fromIdx > 0 ? Math.max(0, order.indexOf(fromIdx)) : 0;
+  const { chains, consumed, legato } = computeTieChains();
+
+  const events = [];
+  for (const idx of order.slice(startPos)) {
+    if (consumed.has(idx)) continue; // absorbida por una ligadura
+    const n        = state.notes[idx];
+    const members  = chains.get(idx) || [idx];
+    const durBeats = members.reduce((s, k) => s + noteDurationBeats(state.notes[k]), 0);
+    events.push({
+      idx,
+      rest:     !!n.rest,
+      freq:     n.rest ? 0 : noteFreq(n.note, n.accidental, state.z2),
+      durBeats,
+      legato:   legato.has(members[members.length - 1]),
+    });
+  }
+  return events;
+}
+
 // ── ¿Se puede insertar la figura en el índice dado? ──────────
 // Al final: chequeo estricto del compás abierto. En medio: se
 // permite siempre — la música refluye y los compases incompletos

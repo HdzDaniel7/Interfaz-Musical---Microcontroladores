@@ -20,6 +20,7 @@ export default {
 /*
  * ${safeFileName(title)}.c — ATmega328P (bare-metal, avr-gcc)
  * Compás ${timeSignature.num}/${timeSignature.den} · ${bpm} BPM
+ * Salida PWM (buzzer): PB1 = OC1A · pin físico 15 · Timer1  →  #define BUZZER_PIN DDB1
  * Generado por Editor Musical
  */
 

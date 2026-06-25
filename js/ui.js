@@ -15,8 +15,13 @@ import {
 import {
   canvas, render, requestRender, setCursor, clearCursor,
   getRow, yToNote, noteAt, insertionIndexAt, onAfterRender, invalidateThemeCache,
+  setActiveNote,
 } from './renderer.js';
 import { playScore, stopScore, setVolume, previewNote, isPlaying } from './audio.js';
+import {
+  isSerialSupported, isSerialConnected, isSerialPlaying, onSerialStatus,
+  serialConnect, serialDisconnect, serialPlay, serialStop,
+} from './serial.js';
 import { exportMidi, midiToProject } from './midi.js';
 import { TEMPLATES, getTemplate, generateCode, currentFileName } from './codegen/registry.js';
 import { DEMO_PROJECT } from './demo.js';
@@ -229,7 +234,7 @@ function updateToolbarAvailability() {
 
 function updatePageAndPlayState() {
   $('page-ind').textContent = `Pág ${state.currentPage + 1}/${state.pages}`;
-  document.body.classList.toggle('is-playing', isPlaying());
+  document.body.classList.toggle('is-playing', anyPlaying());
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -385,9 +390,41 @@ function transposeSelected(delta) {
   afterNotesChanged();
 }
 
+// Destino de reproducción: 'pc' (Web Audio) · 'hw' (USB) · 'both'
+// 'hw' = el microcontrolador seleccionado en el combobox MCU.
+let outputMode = 'pc';
+
+function anyPlaying() { return isPlaying() || isSerialPlaying(); }
+
 // Reproduce desde la nota seleccionada (o desde el inicio si no hay)
 function startPlayback() {
-  playScore(state.selectedNote >= 0 ? state.selectedNote : 0);
+  if (anyPlaying()) return;
+  const from = state.selectedNote >= 0 ? state.selectedNote : 0;
+
+  const toPC = outputMode === 'pc' || outputMode === 'both';
+  const toHW = outputMode === 'hw' || outputMode === 'both';
+
+  if (toHW && !isSerialConnected()) {
+    showToast('Conecta el microcontrolador para reproducir en vivo', { type: 'warn' });
+    if (!toPC) return;
+  }
+
+  if (toPC) playScore(from);
+
+  if (toHW && isSerialConnected()) {
+    // En 'both' el playhead lo anima Web Audio; en 'hw' lo movemos aquí.
+    const onNote = outputMode === 'hw'
+      ? idx => { setActiveNote(idx); render(); }
+      : null;
+    serialPlay(from, { onNote });
+  }
+  render();
+}
+
+// Detiene cualquier salida activa
+function stopAll() {
+  stopScore();
+  serialStop();
   render();
 }
 
@@ -603,6 +640,7 @@ function bindToolbar() {
     syncExtraCodeUI();
     markCodeDirty();
     render();
+    updateCodeView();   // si está en vista "en vivo", recarga el firmware del MCU
     scheduleSave();
   });
 
@@ -644,6 +682,139 @@ function downloadBlob(content, type, fileName) {
   URL.revokeObjectURL(a.href);
 }
 
+// ── Conexión serial (ESP32 en vivo) ──────────────────────────
+function syncSerialUI() {
+  const btn = $('btn-serial');
+  const conn = isSerialConnected();
+  btn.classList.toggle('connected', conn);
+  btn.title = conn
+    ? 'Microcontrolador conectado — clic para desconectar'
+    : 'Conectar microcontrolador por USB (modo en vivo)';
+}
+
+// Cambia el destino de reproducción y refresca el panel de código.
+function setOutputMode(mode) {
+  outputMode = mode;
+  $('output-sel').value = mode;
+  updateCodeView();
+}
+
+// ── Panel de código: vista canción ↔ vista firmware en vivo ───
+// En salida En vivo/Ambos se oculta el código por canción y se
+// muestra el firmware FIJO del MCU seleccionado, para copiarlo/
+// flashearlo. No sustituye ni borra el código generado: solo
+// alterna visibilidad. El firmware se elige según state.mcu.
+const LIVE_FIRMWARE = {
+  'esp32':       { file: 'firmware/esp32-live/esp32-live.ino',             name: 'esp32-live.ino' },
+  'arduino-uno': { file: 'firmware/arduino-uno-live/arduino-uno-live.ino', name: 'arduino-uno-live.ino' },
+  'atmega328p':  { file: 'firmware/atmega328p-live/atmega328p-live.c',     name: 'atmega328p-live.c' },
+};
+
+let _liveFirmwareSrc = null;   // fuente del firmware mostrado (para copiar)
+const _liveCache     = {};     // mcu → fuente ya descargada (o null si falló)
+let _liveShownMcu    = null;   // MCU cuyo firmware se está mostrando
+
+async function loadLiveFirmware() {
+  const mcu  = state.mcu;
+  const info = LIVE_FIRMWARE[mcu] || LIVE_FIRMWARE.esp32;
+  _liveShownMcu = mcu;
+  $('live-code-title').textContent = `${info.name} · firmware en vivo (flashear una vez)`;
+
+  // Cache: mostrar al instante si ya se descargó
+  if (mcu in _liveCache) {
+    showLiveFirmware(_liveCache[mcu], info.file);
+    return;
+  }
+
+  $('live-code-output').textContent = '// Cargando firmware…';
+  try {
+    const res = await fetch(info.file);
+    if (!res.ok) throw new Error(res.status);
+    _liveCache[mcu] = await res.text();
+  } catch (e) {
+    _liveCache[mcu] = null;
+  }
+  // El usuario pudo cambiar de MCU mientras descargaba → no pisar
+  if (_liveShownMcu === mcu) showLiveFirmware(_liveCache[mcu], info.file);
+}
+
+function showLiveFirmware(src, file) {
+  _liveFirmwareSrc = src;
+  if (src) {
+    $('live-code-output').innerHTML = highlightC(src);
+  } else {
+    $('live-code-output').textContent =
+      `// No se pudo cargar el firmware en vivo.\n// Ábrelo directamente desde: ${file}`;
+  }
+}
+
+function updateCodeView() {
+  const live = outputMode === 'hw' || outputMode === 'both';
+  $('code-view-song').style.display = live ? 'none' : 'flex';
+  $('code-view-live').style.display = live ? 'flex' : 'none';
+  if (live) loadLiveFirmware();
+}
+
+function bindSerial() {
+  const btn = $('btn-serial');
+
+  // El selector de salida funciona siempre: también permite ver y
+  // copiar el firmware aunque el navegador no soporte Web Serial.
+  $('output-sel').addEventListener('change', e => {
+    setOutputMode(e.target.value);
+    if ((outputMode === 'hw' || outputMode === 'both')
+        && isSerialSupported() && !isSerialConnected()) {
+      showToast('Firmware en vivo listo para copiar · conecta el MCU para reproducir', {
+        type: 'info', duration: 2600,
+      });
+    }
+  });
+
+  $('btn-copy-live').addEventListener('click', async () => {
+    if (!_liveFirmwareSrc) return;
+    try {
+      await navigator.clipboard.writeText(_liveFirmwareSrc);
+      const b = $('btn-copy-live');
+      b.textContent = '✓ Copiado';
+      setTimeout(() => { b.textContent = 'Copiar'; }, 1500);
+    } catch {
+      showToast('No se pudo copiar al portapapeles', { type: 'error' });
+    }
+  });
+
+  if (!isSerialSupported()) {
+    btn.disabled = true;
+    btn.title = 'Web Serial no disponible (usa Chrome/Edge). Aun así puedes ver y copiar el firmware.';
+    return;
+  }
+
+  btn.addEventListener('click', async () => {
+    try {
+      if (isSerialConnected()) {
+        await serialDisconnect();
+        showToast('Microcontrolador desconectado', { type: 'info', duration: 1800 });
+      } else {
+        await serialConnect();
+        showToast('Microcontrolador conectado · elige la salida', { type: 'success' });
+      }
+    } catch (e) {
+      // El usuario canceló el diálogo de puertos → no es un error real
+      if (e && e.name !== 'NotFoundError') {
+        showToast(`No se pudo conectar: ${e.message}`, { type: 'error', duration: 4000 });
+      }
+    }
+  });
+
+  // La capa serial avisa al conectar/desconectar (incluida la
+  // desconexión física del cable) para refrescar la UI.
+  onSerialStatus(() => {
+    syncSerialUI();
+    document.body.classList.toggle('is-playing', anyPlaying());
+  });
+
+  syncSerialUI();
+}
+
 function bindActions() {
   $('btn-undo').addEventListener('click', doUndo);
   $('btn-redo').addEventListener('click', doRedo);
@@ -653,7 +824,10 @@ function bindActions() {
   $('btn-clear').addEventListener('click', doClearAll);
 
   $('btn-play').addEventListener('click', startPlayback);
-  $('btn-stop').addEventListener('click', stopScore);
+  $('btn-stop').addEventListener('click', stopAll);
+
+  // ── Reproducción en vivo por USB (ESP32) ─────────────────
+  bindSerial();
 
   $('btn-save').addEventListener('click', () => {
     downloadBlob(exportProject(), 'application/json',
@@ -879,7 +1053,7 @@ function bindKeyboard() {
         break;
       case ' ':
         e.preventDefault();
-        isPlaying() ? stopScore() : startPlayback();
+        anyPlaying() ? stopAll() : startPlayback();
         break;
       case 'Escape':
         clearSelection();
@@ -950,4 +1124,5 @@ export function initUI() {
   onAfterRender(updatePageAndPlayState);
 
   syncControlsFromState();
+  updateCodeView();
 }

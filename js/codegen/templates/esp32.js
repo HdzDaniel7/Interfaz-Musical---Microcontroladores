@@ -19,6 +19,7 @@ export default {
 /*
  * ${safeFileName(title)}.ino — ESP32 (framework Arduino)
  * Compás ${timeSignature.num}/${timeSignature.den} · ${bpm} BPM
+ * Salida PWM (buzzer): GPIO 26 · canal LEDC  →  #define BUZZER_PIN 26
  * Generado por Editor Musical
  */
 

@@ -22,6 +22,7 @@ export default {
  * Compás ${timeSignature.num}/${timeSignature.den} · ${bpm} BPM
  * tone() para el buzzer + SLEEP_MODE_IDLE entre ticks para
  * reducir consumo (ideal para alimentación por batería).
+ * Salida PWM (buzzer): pin digital 8 · tone()/Timer2  →  #define BUZZER_PIN 8
  * Generado por Editor Musical
  */
 

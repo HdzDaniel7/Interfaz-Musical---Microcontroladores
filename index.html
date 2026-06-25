@@ -124,6 +124,20 @@
         <svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2" fill="currentColor" stroke="none"/></svg>
       </button>
 
+      <div class="divider"></div>
+
+      <button class="icon-btn" id="btn-serial" title="Conectar microcontrolador por USB (modo en vivo)" aria-label="Conectar microcontrolador">
+        <svg viewBox="0 0 24 24"><path d="M9 2v6M15 2v6M7 8h10v4a5 5 0 0 1-10 0z"/><path d="M12 17v5"/></svg>
+      </button>
+      <label class="field-group" title="Destino de reproducción">
+        <span class="field-label">Salida</span>
+        <select class="sel-input" id="output-sel">
+          <option value="pc" selected>PC</option>
+          <option value="hw">En vivo</option>
+          <option value="both">Ambos</option>
+        </select>
+      </label>
+
       <div class="field-group volume-group" title="Volumen">
         <svg class="vol-icon" viewBox="0 0 24 24" aria-hidden="true">
           <path d="M11 5 6 9H2v6h4l5 4z"/>
@@ -207,11 +221,25 @@
 
       <!-- Tab Código -->
       <div class="tab-content" id="tab-code">
-        <div class="code-header">
-          <span class="code-title" id="code-title">Mi_Cancion.ino</span>
-          <button class="copy-btn" id="btn-copy">Copiar</button>
+
+        <!-- Vista normal: código generado por canción -->
+        <div class="code-view" id="code-view-song">
+          <div class="code-header">
+            <span class="code-title" id="code-title">Mi_Cancion.ino</span>
+            <button class="copy-btn" id="btn-copy">Copiar</button>
+          </div>
+          <pre class="code-output" id="code-output" tabindex="0"></pre>
         </div>
-        <pre class="code-output" id="code-output" tabindex="0"></pre>
+
+        <!-- Vista en vivo: firmware fijo del intérprete ESP32 -->
+        <div class="code-view" id="code-view-live" style="display:none">
+          <div class="code-header">
+            <span class="code-title" id="live-code-title">firmware en vivo (flashear una vez)</span>
+            <button class="copy-btn" id="btn-copy-live">Copiar</button>
+          </div>
+          <pre class="code-output" id="live-code-output" tabindex="0"></pre>
+        </div>
+
       </div>
 
       <!-- Tab Propiedades -->
