@@ -3,6 +3,53 @@
    Tema claro/oscuro con acento índigo-violeta
    ============================================================ */
 
+/* ── FUENTES (auto-hospedadas, sin CDN externo) ────────────────
+   Variable fonts en subset "latin" (cubre acentos/ñ/¿¡ del español);
+   una @font-face por peso, todas apuntando al mismo archivo variable,
+   como sirve Google Fonts para navegadores modernos. */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('fonts/inter-variable-latin.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url('fonts/inter-variable-latin.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url('fonts/inter-variable-latin.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('fonts/inter-variable-latin.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('fonts/jetbrains-mono-variable-latin.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url('fonts/jetbrains-mono-variable-latin.woff2') format('woff2');
+}
+
 /* ── TOKENS DE COLOR ─────────────────────────────────────────── */
 :root {
   --bg-base:       #ECEEF6;
