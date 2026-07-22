@@ -1,6 +1,41 @@
-node_modules/
-.vscode/settings.json
+# Sistema operativo
 .DS_Store
+.AppleDouble
+.AppleDesktop
 Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Editores / IDEs
+.vscode/settings.json
+.idea/
+*.sublime-workspace
+*.swp
+*~
+*.bak
+*.tmp
+
+# Node (no se usa para build, pero por si se instala una herramienta local: live-server, etc.)
+node_modules/
+npm-debug.log*
+package-lock.json
+
+# Artefactos de compilación de firmware (Arduino IDE / arduino-cli / PlatformIO / avr-gcc)
+*.hex
+*.elf
+*.o
+*.obj
+*.map
+build/
+.pio/
+.pioenvs/
+.piolibdeps/
+*.ino.with_bootloader.hex
+
+# Logs y variables de entorno
 *.log
+.env
+.env.local
+
 CLAUDE.md
