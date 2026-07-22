@@ -299,6 +299,16 @@ function drawStaff() {
   }
 }
 
+// ── Texto fantasma cuando la partitura está vacía (onboarding) ──
+function drawEmptyHint() {
+  if (state.notes.length > 0) return;
+  ctx.fillStyle    = cssVar('--text-muted');
+  ctx.font         = `500 14px ${cssVar('--font-sans') || 'sans-serif'}`;
+  ctx.textAlign    = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('Hacé clic para agregar tu primera nota, o probá el botón ✨ Demo', W / 2, H / 2, W - 40);
+}
+
 // ── Dibuja una nota (o silencio) ──────────────────────────────
 function drawNote(n, x, row, { selected = false, isActive = false, ghost = false, fits = true, beamed = false } = {}) {
   const noteColor = ghost
@@ -814,6 +824,7 @@ export function render() {
 
   drawMeasureBackgrounds(boxes, rowOffset);
   drawStaff();
+  drawEmptyHint();
   drawRepeatSigns(boxes, rowOffset);
 
   const selSet = new Set(state.selection);
