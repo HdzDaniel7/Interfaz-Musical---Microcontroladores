@@ -15,7 +15,7 @@ import {
 } from './music.js';
 import {
   canvas, render, requestRender, setCursor, clearCursor,
-  getRow, yToNote, noteAt, insertionIndexAt, onAfterRender, invalidateThemeCache,
+  getRow, yToNote, noteAt, insertionIndexAt, measureAt, onAfterRender, invalidateThemeCache,
   setActiveNote, getZoom, setZoom,
 } from './renderer.js';
 import { playScore, stopScore, setVolume, previewNote, isPlaying } from './audio.js';
@@ -516,6 +516,9 @@ function canvasPos(e) {
 function bindCanvas() {
   canvas.addEventListener('pointerdown', e => {
     const { cx, cy } = canvasPos(e);
+
+    if (_repeatPicking) { handleRepeatPickClick(cx, cy, e.clientX, e.clientY); return; }
+
     canvas.setPointerCapture(e.pointerId);
 
     // Clic sobre nota existente → seleccionar e iniciar arrastre
@@ -584,6 +587,11 @@ function bindCanvas() {
 
   canvas.addEventListener('pointermove', e => {
     const { cx, cy } = canvasPos(e);
+
+    // En modo "elegir en la partitura" no hay cursor fantasma de inserción:
+    // el clic elige un compás, no agrega una nota.
+    if (_repeatPicking) { clearCursor(); requestRender(); return; }
+
     setCursor(cx, cy, getRow(cy));
 
     if (_dragging && _dragIdx >= 0) {
@@ -958,6 +966,126 @@ function bindSerial() {
   syncSerialUI();
 }
 
+// ── Repeticiones: agregar (compartido por el form y el modo "elegir
+// en la partitura") y el modo de selección de compases en el canvas ──
+function addRepeat(from, to, times) {
+  const count = analyzeMeasures().length;
+  if (isNaN(from) || isNaN(to) || isNaN(times) ||
+      from < 0 || to < from || to >= count || times < 2 || times > 16) {
+    showToast('Rango de compases o repeticiones inválido', { type: 'warn' });
+    return false;
+  }
+  const overlap = sanitizedRepeats(count).some(r => !(to < r.from || from > r.to));
+  if (overlap) {
+    showToast('Ese rango se solapa con otra repetición', { type: 'warn' });
+    return false;
+  }
+  state.repeats.push({ from, to, times });
+  markCodeDirty();
+  render();
+  scheduleSave();
+  showToast(`Repetición agregada: compases ${from + 1}–${to + 1} ×${times}`, { type: 'success' });
+  return true;
+}
+
+let _repeatPicking  = false; // modo activo: el próximo clic en el canvas elige un compás
+let _repeatPickFrom = -1;    // compás inicial ya elegido (-1 = ninguno todavía)
+let _repeatPopoverEl = null;
+
+function setRepeatPicking(on) {
+  _repeatPicking  = on;
+  _repeatPickFrom = -1;
+  const btn = $('btn-repeat-pick');
+  btn.classList.toggle('active', on);
+  btn.setAttribute('aria-pressed', String(on));
+  canvas.style.cursor = on ? 'crosshair' : '';
+}
+
+function handleRepeatPickClick(cx, cy, clientX, clientY) {
+  const mi = measureAt(cx, cy);
+  if (mi < 0) {
+    showToast('Hacé clic sobre un compás de la partitura', { type: 'warn', duration: 2000 });
+    return;
+  }
+  if (_repeatPickFrom < 0) {
+    _repeatPickFrom = mi;
+    showToast(`Compás ${mi + 1} elegido como inicio · hacé clic en el compás final`,
+      { type: 'info', duration: 2400 });
+    return;
+  }
+  const from = Math.min(_repeatPickFrom, mi);
+  const to   = Math.max(_repeatPickFrom, mi);
+  setRepeatPicking(false);
+  openRepeatPopover(from, to, clientX, clientY);
+}
+
+function closeRepeatPopover() {
+  if (_repeatPopoverEl) { _repeatPopoverEl.remove(); _repeatPopoverEl = null; }
+  document.removeEventListener('pointerdown', onRepeatPopoverOutsideClick, true);
+  document.removeEventListener('keydown', onRepeatPopoverKeydown, true);
+}
+
+function onRepeatPopoverOutsideClick(e) {
+  if (_repeatPopoverEl && !_repeatPopoverEl.contains(e.target)) closeRepeatPopover();
+}
+
+function onRepeatPopoverKeydown(e) {
+  if (e.key === 'Escape') closeRepeatPopover();
+}
+
+function openRepeatPopover(from, to, clientX, clientY) {
+  closeRepeatPopover();
+
+  const container = $('score-container');
+  const rect = container.getBoundingClientRect();
+
+  const pop = document.createElement('div');
+  pop.className = 'repeat-popover';
+  pop.style.left = Math.max(0, Math.min(clientX - rect.left, rect.width - 160)) + 'px';
+  pop.style.top  = Math.max(0, Math.min(clientY - rect.top, rect.height - 90)) + 'px';
+  pop.innerHTML = `
+    <div class="repeat-popover-title">Compás ${from + 1}–${to + 1}</div>
+    <label class="field-group">
+      <span class="field-label">×</span>
+      <input class="num-input rp-times" type="number" min="2" max="16" value="2">
+    </label>
+    <div class="repeat-popover-actions">
+      <button class="icon-btn rp-cancel" title="Cancelar" aria-label="Cancelar">✕</button>
+      <button class="copy-btn rp-ok">Agregar</button>
+    </div>`;
+  container.appendChild(pop);
+  _repeatPopoverEl = pop;
+
+  const timesInput = pop.querySelector('.rp-times');
+  timesInput.focus();
+  timesInput.select();
+
+  pop.querySelector('.rp-ok').addEventListener('click', () => {
+    const times = parseInt(timesInput.value, 10);
+    if (addRepeat(from, to, times)) closeRepeatPopover();
+  });
+  pop.querySelector('.rp-cancel').addEventListener('click', closeRepeatPopover);
+
+  // Se registran en el siguiente tick: si no, el mismo pointerdown que
+  // abrió el popover (evento en curso) lo cerraría de inmediato.
+  setTimeout(() => {
+    document.addEventListener('pointerdown', onRepeatPopoverOutsideClick, true);
+    document.addEventListener('keydown', onRepeatPopoverKeydown, true);
+  }, 0);
+}
+
+function bindRepeatPicker() {
+  $('btn-repeat-pick').addEventListener('click', () => {
+    if (_repeatPicking) {
+      setRepeatPicking(false);
+    } else {
+      closeRepeatPopover();
+      setRepeatPicking(true);
+      showToast('Hacé clic en el compás inicial de la repetición', { type: 'info', duration: 2400 });
+    }
+  });
+}
+
 function bindActions() {
   $('btn-undo').addEventListener('click', doUndo);
   $('btn-redo').addEventListener('click', doRedo);
@@ -1110,24 +1238,10 @@ function bindActions() {
     const from  = parseInt($('rep-from').value, 10) - 1;
     const to    = parseInt($('rep-to').value, 10) - 1;
     const times = parseInt($('rep-times').value, 10);
-    const count = analyzeMeasures().length;
-
-    if (isNaN(from) || isNaN(to) || isNaN(times) ||
-        from < 0 || to < from || to >= count || times < 2 || times > 16) {
-      showToast('Rango de compases o repeticiones inválido', { type: 'warn' });
-      return;
-    }
-    const overlap = sanitizedRepeats(count).some(r => !(to < r.from || from > r.to));
-    if (overlap) {
-      showToast('Ese rango se solapa con otra repetición', { type: 'warn' });
-      return;
-    }
-    state.repeats.push({ from, to, times });
-    markCodeDirty();
-    render();
-    scheduleSave();
-    showToast(`Repetición agregada: compases ${from + 1}–${to + 1} ×${times}`, { type: 'success' });
+    addRepeat(from, to, times);
   });
+
+  bindRepeatPicker();
 
   // Clic en una línea de código → seleccionar la nota correspondiente
   $('code-output').addEventListener('click', e => {

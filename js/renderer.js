@@ -813,6 +813,18 @@ export function insertionIndexAt(cx, cy) {
   return insertionIndexFromLayout(items, cx, cy, state.currentPage * RPP);
 }
 
+// ── Hit-test: qué compás está en (cx, cy) — para elegir repeticiones ──
+export function measureAt(cx, cy) {
+  const row = getRow(cy);
+  if (row < 0) return -1;
+  const absRow = row + state.currentPage * RPP;
+  const { boxes } = buildLayout();
+  for (const b of boxes) {
+    if (b.row === absRow && cx >= b.x0 && cx <= b.x0 + b.w) return b.measureIdx;
+  }
+  return -1;
+}
+
 // ── Render principal ──────────────────────────────────────────
 export function render() {
   calcCanvas();
