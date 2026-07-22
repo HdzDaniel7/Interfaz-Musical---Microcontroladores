@@ -1194,6 +1194,13 @@ export function initUI() {
 
   window.addEventListener('resize', requestRender);
 
+  // Guardado inmediato al salir: el debounce de 1.5s de scheduleSave()
+  // puede perder los últimos cambios si la pestaña se cierra antes de que dispare.
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) saveNow();
+  });
+  window.addEventListener('pagehide', saveNow);
+
   onAfterRender(updateStatus);
   onAfterRender(updateCodePanel);
   onAfterRender(updatePageAndPlayState);
