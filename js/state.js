@@ -32,8 +32,39 @@ export const state = {
 // HISTORIA (undo / redo)
 // ══════════════════════════════════════════════════════════════
 
+function snapshotState() {
+  return {
+    notes:         state.notes,
+    repeats:       state.repeats,
+    timeSignature: state.timeSignature,
+    keySignature:  state.keySignature,
+    bpm:           state.bpm,
+    z2:            state.z2,
+    title:         state.title,
+  };
+}
+
+// Snapshots viejos (previos a los fixes B1/B3) eran un array plano de notas,
+// o un objeto { notes, repeats } sin el resto de los campos: lo que falte
+// se completa con el valor actual para no perder configuración vigente.
+function parseHistorySnapshot(json) {
+  const parsed = JSON.parse(json);
+  if (Array.isArray(parsed)) return { ...snapshotState(), notes: parsed };
+  return { ...snapshotState(), ...parsed };
+}
+
+function applySnapshot(snap) {
+  state.notes         = snap.notes;
+  state.repeats        = snap.repeats;
+  state.timeSignature  = snap.timeSignature;
+  state.keySignature   = snap.keySignature;
+  state.bpm            = snap.bpm;
+  state.z2             = snap.z2;
+  state.title          = snap.title;
+}
+
 export function pushHistory() {
-  state.history.push(JSON.stringify({ notes: state.notes, repeats: state.repeats }));
+  state.history.push(JSON.stringify(snapshotState()));
   state.redoStack = [];
   if (state.history.length > 80) state.history.shift();
 }
@@ -43,30 +74,18 @@ export function clearSelection() {
   state.selection = [];
 }
 
-// Snapshots viejos (previos al fix de B1) eran un array plano de notas;
-// si aparece uno así, las repeticiones actuales quedan como estaban.
-function parseHistorySnapshot(json) {
-  const parsed = JSON.parse(json);
-  if (Array.isArray(parsed)) return { notes: parsed, repeats: state.repeats };
-  return { notes: parsed.notes, repeats: parsed.repeats ?? [] };
-}
-
 export function undo() {
   if (!state.history.length) return false;
-  state.redoStack.push(JSON.stringify({ notes: state.notes, repeats: state.repeats }));
-  const snap = parseHistorySnapshot(state.history.pop());
-  state.notes = snap.notes;
-  state.repeats = snap.repeats;
+  state.redoStack.push(JSON.stringify(snapshotState()));
+  applySnapshot(parseHistorySnapshot(state.history.pop()));
   clearSelection();
   return true;
 }
 
 export function redo() {
   if (!state.redoStack.length) return false;
-  state.history.push(JSON.stringify({ notes: state.notes, repeats: state.repeats }));
-  const snap = parseHistorySnapshot(state.redoStack.pop());
-  state.notes = snap.notes;
-  state.repeats = snap.repeats;
+  state.history.push(JSON.stringify(snapshotState()));
+  applySnapshot(parseHistorySnapshot(state.redoStack.pop()));
   clearSelection();
   return true;
 }

@@ -286,8 +286,8 @@ function afterNotesChanged() {
   scheduleSave();
 }
 
-function doUndo() { if (undo()) { afterNotesChanged(); } }
-function doRedo() { if (redo()) { afterNotesChanged(); } }
+function doUndo() { if (undo()) { syncControlsFromState(); afterNotesChanged(); } }
+function doRedo() { if (redo()) { syncControlsFromState(); afterNotesChanged(); } }
 function doDelete() { if (deleteSelected()) { afterNotesChanged(); } }
 
 function doClearAll() {
@@ -847,7 +847,7 @@ function bindActions() {
       type: 'success',
       duration: 4500,
       actionLabel: 'Deshacer',
-      onAction: () => { if (undo()) { markCodeDirty(); render(); saveNow(); } },
+      onAction: () => { if (undo()) { syncControlsFromState(); markCodeDirty(); render(); saveNow(); } },
     });
   });
 
@@ -911,7 +911,7 @@ function bindActions() {
           type: 'success',
           duration: 5000,
           actionLabel: 'Deshacer',
-          onAction: () => { if (undo()) { markCodeDirty(); render(); saveNow(); } },
+          onAction: () => { if (undo()) { syncControlsFromState(); markCodeDirty(); render(); saveNow(); } },
         });
       } catch (err) {
         showToast(`No se pudo importar: ${err.message}`, { type: 'error', duration: 4000 });
