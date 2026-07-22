@@ -976,6 +976,11 @@ body.is-playing .statusbar .dot {
    pieza (el fantasma se pinta rojo cuando no cabe). */
 .tool-btn.unavailable {
   opacity: 0.38;
+  background-image: repeating-linear-gradient(
+    45deg,
+    var(--text-muted) 0, var(--text-muted) 1px,
+    transparent 1px, transparent 6px
+  );
 }
 .tool-btn:disabled {
   opacity: 0.28;
