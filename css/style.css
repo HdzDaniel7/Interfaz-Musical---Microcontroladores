@@ -364,6 +364,14 @@ pre { font-family: var(--font-mono); font-size: var(--text-xs); }
   height: 28px;
   text-align: center;
   padding: 0 4px;
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
+.num-input::-webkit-inner-spin-button,
+.num-input::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
 }
 
 .sel-input {
