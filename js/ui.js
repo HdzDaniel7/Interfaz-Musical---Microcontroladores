@@ -70,6 +70,7 @@ export function showToast(message, { type = 'info', duration = 2800, actionLabel
 
 let _codeDirty = true;
 let _lastCodeSelection = -2;
+let _titleCodeDebounce = null; // debounce de la regeneración al tipear el título
 
 export function markCodeDirty() { _codeDirty = true; }
 
@@ -638,7 +639,8 @@ function bindToolbar() {
   $('title-input').addEventListener('input', e => {
     state.title = e.target.value;
     markCodeDirty();
-    updateCodePanel();
+    clearTimeout(_titleCodeDebounce);
+    _titleCodeDebounce = setTimeout(updateCodePanel, 300);
     scheduleSave();
   });
 
