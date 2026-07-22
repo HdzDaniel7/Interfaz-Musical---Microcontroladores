@@ -157,7 +157,23 @@ function noteDescription(idx) {
     : `${NOTE_DISPLAY[sn.note]}${acc}${dot} · ${sn.dur}${tri}`;
 }
 
+// Firma barata de todo lo que puede afectar la salida de updateStatus.
+// Evita repetir analyzeMeasures()/updateToolbarAvailability() (caros) en
+// cada frame del playhead durante la reproducción, que no toca ninguno
+// de estos campos — solo mueve el playhead y la página.
+let _statusSig = '';
+
 function updateStatus() {
+  const sn = state.selectedNote >= 0 ? state.notes[state.selectedNote] : null;
+  const sig = [
+    state.notes.length, state.selectedNote, state.selection.length,
+    state.timeSignature.num, state.timeSignature.den, state.keySignature,
+    state.mcu, state.repeats.length,
+    sn ? `${sn.note}|${sn.dur}|${sn.dotted}|${sn.triplet}|${sn.rest}|${sn.accidental}` : '',
+  ].join('|');
+  if (sig === _statusSig) return;
+  _statusSig = sig;
+
   const count = state.notes.length;
   $('status-count').textContent = `${count} nota${count !== 1 ? 's' : ''}`;
 
