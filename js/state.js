@@ -33,7 +33,7 @@ export const state = {
 // ══════════════════════════════════════════════════════════════
 
 export function pushHistory() {
-  state.history.push(JSON.stringify(state.notes));
+  state.history.push(JSON.stringify({ notes: state.notes, repeats: state.repeats }));
   state.redoStack = [];
   if (state.history.length > 80) state.history.shift();
 }
@@ -43,18 +43,30 @@ export function clearSelection() {
   state.selection = [];
 }
 
+// Snapshots viejos (previos al fix de B1) eran un array plano de notas;
+// si aparece uno así, las repeticiones actuales quedan como estaban.
+function parseHistorySnapshot(json) {
+  const parsed = JSON.parse(json);
+  if (Array.isArray(parsed)) return { notes: parsed, repeats: state.repeats };
+  return { notes: parsed.notes, repeats: parsed.repeats ?? [] };
+}
+
 export function undo() {
   if (!state.history.length) return false;
-  state.redoStack.push(JSON.stringify(state.notes));
-  state.notes = JSON.parse(state.history.pop());
+  state.redoStack.push(JSON.stringify({ notes: state.notes, repeats: state.repeats }));
+  const snap = parseHistorySnapshot(state.history.pop());
+  state.notes = snap.notes;
+  state.repeats = snap.repeats;
   clearSelection();
   return true;
 }
 
 export function redo() {
   if (!state.redoStack.length) return false;
-  state.history.push(JSON.stringify(state.notes));
-  state.notes = JSON.parse(state.redoStack.pop());
+  state.history.push(JSON.stringify({ notes: state.notes, repeats: state.repeats }));
+  const snap = parseHistorySnapshot(state.redoStack.pop());
+  state.notes = snap.notes;
+  state.repeats = snap.repeats;
   clearSelection();
   return true;
 }
