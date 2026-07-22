@@ -505,6 +505,9 @@ input[type="range"]::-moz-range-thumb {
   box-shadow: var(--shadow-sm);
 }
 
+input[type="range"]:focus-visible::-webkit-slider-thumb { box-shadow: var(--glow-accent); }
+input[type="range"]:focus-visible::-moz-range-thumb     { box-shadow: var(--glow-accent); }
+
 /* Indicador de página */
 .page-label {
   font-size: var(--text-xs);
