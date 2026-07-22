@@ -5,6 +5,7 @@
 import {
   state, pushHistory, undo, redo, deleteSelected, clearAll, clearSelection,
   exportProject, importProject, scheduleSave, saveNow, saveTheme,
+  saveUIPrefs, loadUIPrefs,
 } from './state.js';
 import {
   NOTE_DISPLAY, NOTE_SLOT, SLOT_MIN, SLOT_MAX, SLOT_TO_NOTE, Z2_MIN, Z2_MAX,
@@ -27,6 +28,10 @@ import { TEMPLATES, getTemplate, generateCode, currentFileName } from './codegen
 import { DEMO_PROJECT } from './demo.js';
 
 const $ = id => document.getElementById(id);
+
+// Preferencias de UI (volumen, salida) — independientes del proyecto,
+// no se pierden al "Limpiar todo" ni al cargar otra canción.
+const uiPrefs = loadUIPrefs();
 
 // ══════════════════════════════════════════════════════════════
 // TOASTS — notificaciones no bloqueantes
@@ -445,7 +450,7 @@ function transposeSelected(delta) {
 
 // Destino de reproducción: 'pc' (Web Audio) · 'hw' (USB) · 'both'
 // 'hw' = el microcontrolador seleccionado en el combobox MCU.
-let outputMode = 'pc';
+let outputMode = uiPrefs.outputMode || 'pc';
 
 function anyPlaying() { return isPlaying() || isSerialPlaying(); }
 
@@ -709,12 +714,19 @@ function bindToolbar() {
   // ── Volumen ──────────────────────────────────────────────
   const slider = $('volume-slider');
   const label  = $('volume-label');
+  if (typeof uiPrefs.volume === 'number') slider.value = uiPrefs.volume;
   const applyVolume = () => {
     const v = parseInt(slider.value, 10) || 0;
     label.textContent = v + '%';
     setVolume((v / 100) * 0.25); // 100% = ganancia 0.25 (protege oídos)
   };
-  slider.addEventListener('input', applyVolume);
+  let _volumeSaveDebounce = null;
+  slider.addEventListener('input', () => {
+    applyVolume();
+    clearTimeout(_volumeSaveDebounce);
+    _volumeSaveDebounce = setTimeout(
+      () => saveUIPrefs({ volume: parseInt(slider.value, 10) || 0 }), 300);
+  });
   applyVolume();
 }
 
@@ -813,10 +825,14 @@ function updateCodeView() {
 function bindSerial() {
   const btn = $('btn-serial');
 
+  // Restaura la salida elegida en la sesión anterior (persistida aparte del proyecto).
+  setOutputMode(outputMode);
+
   // El selector de salida funciona siempre: también permite ver y
   // copiar el firmware aunque el navegador no soporte Web Serial.
   $('output-sel').addEventListener('change', e => {
     setOutputMode(e.target.value);
+    saveUIPrefs({ outputMode });
     if ((outputMode === 'hw' || outputMode === 'both')
         && isSerialSupported() && !isSerialConnected()) {
       showToast('Firmware en vivo listo para copiar · conecta el MCU para reproducir', {

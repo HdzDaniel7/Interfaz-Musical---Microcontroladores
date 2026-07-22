@@ -229,6 +229,7 @@ export function importProject(jsonStr) {
 
 const LS_KEY    = 'editor-musical-proyecto';
 const THEME_KEY = 'editor-musical-tema';
+const UI_KEY    = 'editor-musical-ui';
 
 export function saveToLocalStorage() {
   try {
@@ -263,6 +264,24 @@ export function saveTheme(theme) {
 
 export function loadTheme() {
   try { return localStorage.getItem(THEME_KEY); } catch (e) { return null; }
+}
+
+// ── Preferencias de UI (volumen, salida, ancho de sidebar…) ──
+// Independiente del proyecto (LS_KEY): sobrevive a "Limpiar todo"/cargar otro proyecto.
+export function saveUIPrefs(partial) {
+  try {
+    const current = loadUIPrefs();
+    localStorage.setItem(UI_KEY, JSON.stringify({ ...current, ...partial }));
+  } catch (e) {}
+}
+
+export function loadUIPrefs() {
+  try {
+    const raw = localStorage.getItem(UI_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch (e) {
+    return {};
+  }
 }
 
 // ── Debounce: espera 1.5 s de inactividad antes de guardar ────
