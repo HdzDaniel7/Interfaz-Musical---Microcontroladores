@@ -623,6 +623,47 @@ function bindCanvas() {
   });
 }
 
+// ── Divisor arrastrable entre el pentagrama y el panel lateral ──
+const SIDEBAR_W_MIN = 220;
+const SIDEBAR_W_MAX = 560;
+
+function bindSidebarResizer() {
+  const resizer = $('sidebar-resizer');
+  const root = document.documentElement;
+
+  if (typeof uiPrefs.sidebarW === 'number') {
+    root.style.setProperty('--sidebar-w', `${uiPrefs.sidebarW}px`);
+  }
+
+  let dragging = false, startX = 0, startW = 0;
+
+  resizer.addEventListener('pointerdown', e => {
+    dragging = true;
+    resizer.setPointerCapture(e.pointerId);
+    resizer.classList.add('dragging');
+    startX = e.clientX;
+    startW = $('side-panel').getBoundingClientRect().width;
+  });
+
+  resizer.addEventListener('pointermove', e => {
+    if (!dragging) return;
+    const delta = startX - e.clientX; // arrastrar a la izquierda agranda el panel
+    const w = Math.max(SIDEBAR_W_MIN, Math.min(SIDEBAR_W_MAX, startW + delta));
+    root.style.setProperty('--sidebar-w', `${w}px`);
+    requestRender();
+  });
+
+  const endDrag = () => {
+    if (!dragging) return;
+    dragging = false;
+    resizer.classList.remove('dragging');
+    const w = parseInt(getComputedStyle(root).getPropertyValue('--sidebar-w'), 10);
+    if (!isNaN(w)) saveUIPrefs({ sidebarW: w });
+  };
+  resizer.addEventListener('pointerup', endDrag);
+  resizer.addEventListener('pointercancel', endDrag);
+}
+
 // ══════════════════════════════════════════════════════════════
 // CONTROLES DE LA TOOLBAR
 // ══════════════════════════════════════════════════════════════
@@ -1191,6 +1232,7 @@ export function initUI() {
   bindToolbar();
   bindActions();
   bindKeyboard();
+  bindSidebarResizer();
 
   window.addEventListener('resize', requestRender);
 

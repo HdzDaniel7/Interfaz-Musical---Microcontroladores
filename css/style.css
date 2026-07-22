@@ -612,6 +612,20 @@ input[type="range"]:focus-visible::-moz-range-thumb     { box-shadow: var(--glow
   box-shadow: var(--shadow-md);
 }
 
+/* Divisor arrastrable entre el pentagrama y el panel lateral */
+.sidebar-resizer {
+  width: 5px;
+  flex-shrink: 0;
+  cursor: col-resize;
+  background: transparent;
+  -webkit-user-select: none;
+  user-select: none;
+}
+.sidebar-resizer:hover,
+.sidebar-resizer.dragging {
+  background: var(--accent);
+}
+
 /* ── PANEL LATERAL ───────────────────────────────────────────── */
 .side-panel {
   width: var(--sidebar-w);
@@ -1000,4 +1014,5 @@ body.is-playing .statusbar .dot {
     border-left: none;
     border-top: 1px solid var(--border-subtle);
   }
+  .sidebar-resizer { display: none; }
 }
