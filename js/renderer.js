@@ -615,6 +615,9 @@ function drawTripletBrackets(groups, rowOffset) {
 }
 
 // ── Arcos de ligadura entre notas consecutivas ────────────────
+// `items[it.noteIdx + 1]` asume 1 item por nota en el mismo orden que
+// state.notes (cierto hoy: buildLayout no filtra notas) — si eso cambia,
+// buscar el siguiente item por noteIdx en vez de indexar directo.
 function drawTies(items, rowOffset) {
   ctx.save();
   ctx.strokeStyle = cssVar('--note-label') || '#5B6CFF';
@@ -627,26 +630,44 @@ function drawTies(items, rowOffset) {
     if (!next || next.note.rest) continue;
 
     const pageRow = it.row - rowOffset;
-    if (pageRow < 0 || pageRow >= RPP) continue;
 
-    const y1   = noteToY(n.note, pageRow);
-    const slot = NOTE_SLOT[n.note] ?? 0;
-    const up   = slot < 2; // arco por arriba para notas graves, abajo para agudas
-    const off  = up ? -8 : 10;
+    // Arco de salida: solo si la nota origen es visible en esta página
+    if (pageRow >= 0 && pageRow < RPP) {
+      const y1   = noteToY(n.note, pageRow);
+      const slot = NOTE_SLOT[n.note] ?? 0;
+      const up   = slot < 2; // arco por arriba para notas graves, abajo para agudas
+      const off  = up ? -8 : 10;
 
-    ctx.beginPath();
-    if (next.row === it.row) {
-      const y2  = noteToY(next.note.note, pageRow);
-      const mx  = (it.x + next.x) / 2;
-      const my  = Math.min(y1, y2) * (up ? 1 : 0) + Math.max(y1, y2) * (up ? 0 : 1) + off * 1.6;
-      ctx.moveTo(it.x + 7, y1 + off * 0.5);
-      ctx.quadraticCurveTo(mx, my, next.x - 7, y2 + off * 0.5);
-    } else {
-      // La siguiente está en otra fila: arco abierto hacia el borde
-      ctx.moveTo(it.x + 7, y1 + off * 0.5);
-      ctx.quadraticCurveTo(it.x + 18, y1 + off * 1.4, it.x + 30, y1 + off * 0.6);
+      ctx.beginPath();
+      if (next.row === it.row) {
+        const y2  = noteToY(next.note.note, pageRow);
+        const mx  = (it.x + next.x) / 2;
+        const my  = Math.min(y1, y2) * (up ? 1 : 0) + Math.max(y1, y2) * (up ? 0 : 1) + off * 1.6;
+        ctx.moveTo(it.x + 7, y1 + off * 0.5);
+        ctx.quadraticCurveTo(mx, my, next.x - 7, y2 + off * 0.5);
+      } else {
+        // La siguiente está en otra fila: arco abierto hacia el borde
+        ctx.moveTo(it.x + 7, y1 + off * 0.5);
+        ctx.quadraticCurveTo(it.x + 18, y1 + off * 1.4, it.x + 30, y1 + off * 0.6);
+      }
+      ctx.stroke();
     }
-    ctx.stroke();
+
+    // Arco de llegada (espejado) en la fila destino, si cruza de fila
+    if (next.row !== it.row) {
+      const pageRow2 = next.row - rowOffset;
+      if (pageRow2 >= 0 && pageRow2 < RPP) {
+        const y2    = noteToY(next.note.note, pageRow2);
+        const slot2 = NOTE_SLOT[next.note.note] ?? 0;
+        const up2   = slot2 < 2;
+        const off2  = up2 ? -8 : 10;
+
+        ctx.beginPath();
+        ctx.moveTo(next.x - 30, y2 + off2 * 0.6);
+        ctx.quadraticCurveTo(next.x - 18, y2 + off2 * 1.4, next.x - 7, y2 + off2 * 0.5);
+        ctx.stroke();
+      }
+    }
   }
   ctx.restore();
 }
