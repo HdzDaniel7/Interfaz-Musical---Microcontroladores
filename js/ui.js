@@ -16,7 +16,7 @@ import {
 import {
   canvas, render, requestRender, setCursor, clearCursor,
   getRow, yToNote, noteAt, insertionIndexAt, onAfterRender, invalidateThemeCache,
-  setActiveNote,
+  setActiveNote, getZoom, setZoom,
 } from './renderer.js';
 import { playScore, stopScore, setVolume, previewNote, isPlaying } from './audio.js';
 import {
@@ -507,7 +507,10 @@ let _dragHistoryPushed = false;
 
 function canvasPos(e) {
   const rect = canvas.getBoundingClientRect();
-  return { cx: e.clientX - rect.left, cy: e.clientY - rect.top };
+  const zoom = getZoom();
+  // rect está en píxeles CSS (ya escalados por el zoom); el hit-testing
+  // (noteAt, insertionIndexAt, getRow…) trabaja en unidades lógicas.
+  return { cx: (e.clientX - rect.left) / zoom, cy: (e.clientY - rect.top) / zoom };
 }
 
 function bindCanvas() {
@@ -662,6 +665,34 @@ function bindSidebarResizer() {
   };
   resizer.addEventListener('pointerup', endDrag);
   resizer.addEventListener('pointercancel', endDrag);
+}
+
+// ── Zoom del pentagrama ──────────────────────────────────────
+const ZOOM_STEP = 0.1;
+
+function updateZoomLabel() {
+  $('zoom-ind').textContent = Math.round(getZoom() * 100) + '%';
+}
+
+function applyZoomDelta(delta) {
+  setZoom(getZoom() + delta);
+  updateZoomLabel();
+  requestRender();
+  saveUIPrefs({ zoom: getZoom() });
+}
+
+function bindZoom() {
+  if (typeof uiPrefs.zoom === 'number') setZoom(uiPrefs.zoom);
+  updateZoomLabel();
+
+  $('btn-zoom-out').addEventListener('click', () => applyZoomDelta(-ZOOM_STEP));
+  $('btn-zoom-in').addEventListener('click', () => applyZoomDelta(ZOOM_STEP));
+
+  canvas.addEventListener('wheel', e => {
+    if (!e.ctrlKey) return;
+    e.preventDefault();
+    applyZoomDelta(e.deltaY < 0 ? ZOOM_STEP : -ZOOM_STEP);
+  }, { passive: false });
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -1233,6 +1264,7 @@ export function initUI() {
   bindActions();
   bindKeyboard();
   bindSidebarResizer();
+  bindZoom();
 
   window.addEventListener('resize', requestRender);
 

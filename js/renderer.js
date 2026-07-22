@@ -18,6 +18,15 @@ const ctx = canvas.getContext('2d');
 // Dimensiones lógicas (el canvas físico se escala por devicePixelRatio)
 let W = 0, H = 0;
 
+// ── Zoom del pentagrama (0.75–1.5) ─────────────────────────────
+// Multiplica la escala visual sin tocar las constantes de dibujo:
+// W lógico se reduce en la misma proporción y ctx.setTransform lo
+// compensa, así NW/SS/ST/etc. siguen siendo las mismas unidades lógicas.
+export const ZOOM_MIN = 0.75, ZOOM_MAX = 1.5;
+let zoom = 1;
+export function getZoom() { return zoom; }
+export function setZoom(z) { zoom = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, z)); }
+
 // ── Estado visual (cursor, reproducción) ──────────────────────
 let cursorX = -1, cursorY = -1, cursorRow = -1;
 let activeNoteIdx = -1;          // nota sonando ahora (reproducción)
@@ -46,16 +55,18 @@ export function invalidateThemeCache() { cssCache = {}; }
 // ── Tamaño del canvas (con escala HiDPI para nitidez) ─────────
 function calcCanvas() {
   const container = document.getElementById('score-container');
-  const pad = 36; // padding del wrapper (18px por lado, ver CSS)
-  W = Math.max(container.clientWidth - pad, 380);
+  const pad  = 36; // padding del wrapper (18px por lado, ver CSS)
+  const cssW = Math.max(container.clientWidth - pad, 380); // ancho visual (CSS px)
+  W = cssW / zoom; // ancho lógico: a más zoom, menos unidades lógicas caben por fila
   H = ST + RPP * RH + 10;
+  const cssH = H * zoom;
 
   const dpr = window.devicePixelRatio || 1;
-  canvas.width        = Math.round(W * dpr);
-  canvas.height       = Math.round(H * dpr);
-  canvas.style.width  = W + 'px';
-  canvas.style.height = H + 'px';
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  canvas.width        = Math.round(cssW * dpr);
+  canvas.height       = Math.round(cssH * dpr);
+  canvas.style.width  = cssW + 'px';
+  canvas.style.height = cssH + 'px';
+  ctx.setTransform(dpr * zoom, 0, 0, dpr * zoom, 0, 0);
 }
 
 // ── Coordenadas del pentagrama ────────────────────────────────

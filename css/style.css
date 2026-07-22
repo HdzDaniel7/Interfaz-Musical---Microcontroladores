@@ -612,6 +612,25 @@ input[type="range"]:focus-visible::-moz-range-thumb     { box-shadow: var(--glow
   box-shadow: var(--shadow-md);
 }
 
+/* Zoom flotante (misma esquina inferior, lado opuesto) */
+.zoom-overlay {
+  position: absolute;
+  left: 18px;
+  bottom: 18px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md);
+}
+.zoom-overlay .icon-btn {
+  font-size: 15px;
+  font-weight: 700;
+}
+
 /* Divisor arrastrable entre el pentagrama y el panel lateral */
 .sidebar-resizer {
   width: 5px;
