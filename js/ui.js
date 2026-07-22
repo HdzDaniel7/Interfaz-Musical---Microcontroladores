@@ -25,6 +25,7 @@ import {
 } from './serial.js';
 import { exportMidi, midiToProject } from './midi.js';
 import { TEMPLATES, getTemplate, generateCode, currentFileName } from './codegen/registry.js';
+import { safeFileName } from './codegen/common.js';
 import { DEMO_PROJECT } from './demo.js';
 
 const $ = id => document.getElementById(id);
@@ -1196,6 +1197,15 @@ function bindActions() {
     };
     reader.readAsArrayBuffer(file);
     e.target.value = '';
+  });
+
+  $('btn-export-png').addEventListener('click', () => {
+    canvas.toBlob(blob => {
+      if (!blob) { showToast('No se pudo generar la imagen', { type: 'error' }); return; }
+      const name = safeFileName(state.title) + '.png';
+      downloadBlob(blob, 'image/png', name);
+      showToast(`${name} exportado`, { type: 'success' });
+    }, 'image/png');
   });
 
   $('btn-copy').addEventListener('click', async () => {
