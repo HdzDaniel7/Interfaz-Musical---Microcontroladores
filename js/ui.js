@@ -244,7 +244,9 @@ function updatePageAndPlayState() {
 function selectTool(dur, rest) {
   state.activeTool = { ...state.activeTool, dur, rest };
   document.querySelectorAll('.tool-btn[data-dur]').forEach(b => {
-    b.classList.toggle('active', b.dataset.dur === dur && (b.dataset.rest === '1') === rest);
+    const active = b.dataset.dur === dur && (b.dataset.rest === '1') === rest;
+    b.classList.toggle('active', active);
+    b.setAttribute('aria-pressed', String(active));
   });
   updateToolbarAvailability();
   requestRender(); // refrescar nota fantasma
@@ -252,8 +254,11 @@ function selectTool(dur, rest) {
 
 function selectAccidental(acc) {
   state.activeAccidental = acc;
-  document.querySelectorAll('.acc-btn').forEach(b =>
-    b.classList.toggle('active', b.dataset.acc === acc));
+  document.querySelectorAll('.acc-btn').forEach(b => {
+    const active = b.dataset.acc === acc;
+    b.classList.toggle('active', active);
+    b.setAttribute('aria-pressed', String(active));
+  });
   requestRender();
 }
 
@@ -262,7 +267,9 @@ function toggleDot() {
   state.activeTool.dotted = !state.activeTool.dotted;
   if (state.activeTool.dotted) state.activeTool.triplet = false;
   $('dot-btn').classList.toggle('active', state.activeTool.dotted);
+  $('dot-btn').setAttribute('aria-pressed', String(state.activeTool.dotted));
   $('triplet-btn').classList.toggle('active', state.activeTool.triplet);
+  $('triplet-btn').setAttribute('aria-pressed', String(state.activeTool.triplet));
   updateToolbarAvailability();
   requestRender();
 }
@@ -271,7 +278,9 @@ function toggleTripletTool() {
   state.activeTool.triplet = !state.activeTool.triplet;
   if (state.activeTool.triplet) state.activeTool.dotted = false;
   $('dot-btn').classList.toggle('active', state.activeTool.dotted);
+  $('dot-btn').setAttribute('aria-pressed', String(state.activeTool.dotted));
   $('triplet-btn').classList.toggle('active', state.activeTool.triplet);
+  $('triplet-btn').setAttribute('aria-pressed', String(state.activeTool.triplet));
   updateToolbarAvailability();
   requestRender();
 }
@@ -951,8 +960,12 @@ function bindActions() {
   // Tabs del panel lateral
   document.querySelectorAll('.tab[data-tab]').forEach(tab => {
     tab.addEventListener('click', () => {
-      document.querySelectorAll('.tab[data-tab]').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.tab[data-tab]').forEach(t => {
+        t.classList.remove('active');
+        t.setAttribute('aria-selected', 'false');
+      });
       tab.classList.add('active');
+      tab.setAttribute('aria-selected', 'true');
       $('tab-code').style.display  = tab.dataset.tab === 'code'  ? 'flex' : 'none';
       $('tab-props').style.display = tab.dataset.tab === 'props' ? 'flex' : 'none';
     });
