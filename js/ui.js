@@ -187,10 +187,11 @@ let _statusSig = '';
 
 function updateStatus() {
   const sn = state.selectedNote >= 0 ? state.notes[state.selectedNote] : null;
+  const playing = anyPlaying();
   const sig = [
     state.notes.length, state.selectedNote, state.selection.length,
     state.timeSignature.num, state.timeSignature.den, state.keySignature,
-    state.mcu, state.repeats.length,
+    state.mcu, state.repeats.length, playing,
     sn ? `${sn.note}|${sn.dur}|${sn.dotted}|${sn.triplet}|${sn.rest}|${sn.accidental}` : '',
   ].join('|');
   if (sig === _statusSig) return;
@@ -206,7 +207,12 @@ function updateStatus() {
   $('status-timesig').textContent = `Compás: ${ts.num}/${ts.den}`;
   $('status-mcu').textContent     = `MCU: ${getTemplate(state.mcu).label}`;
 
-  if (state.selection.length > 1) {
+  // Mientras suena, el compás/beat actual lo escribe directamente el
+  // tick del playhead (audio.js) cuadro a cuadro — más barato que
+  // recalcularlo acá, y evita pisarlo en cada frame de reproducción.
+  if (playing) {
+    // no-op: dejar el texto que puso audio.js
+  } else if (state.selection.length > 1) {
     $('status-note').textContent = `${state.selection.length} notas seleccionadas`;
   } else if (state.selectedNote >= 0 && state.notes[state.selectedNote]) {
     $('status-note').textContent = noteDescription(state.selectedNote);

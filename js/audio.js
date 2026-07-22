@@ -5,11 +5,13 @@
    ============================================================ */
 
 import { state } from './state.js';
-import { noteFreq, buildSchedule } from './music.js';
+import { noteFreq, buildSchedule, beatsPerMeasure } from './music.js';
 import { RPP } from './constants.js';
 import {
   render, setActiveNote, setPlayhead, buildLayout,
 } from './renderer.js';
+
+const statusNoteEl = document.getElementById('status-note');
 
 let audioCtx      = null;  // contexto persistente (se reutiliza)
 let masterGain    = null;  // volumen durante la reproducción actual
@@ -132,6 +134,7 @@ export function playScore(fromIdx = 0) {
   // ── Playhead animado + seguimiento de página ───────────────
   const { items } = buildLayout(); // snapshot (las notas no cambian al reproducir)
   const byIdx = new Map(items.map(it => [it.noteIdx, it]));
+  const beatDen = Math.round(beatsPerMeasure()); // capacidad del compás (snapshot)
   let cursor = 0;
 
   const tick = () => {
@@ -156,6 +159,12 @@ export function playScore(fromIdx = 0) {
 
         const frac = Math.min(1, (now - ev.start) / (ev.end - ev.start));
         setPlayhead({ x: item.x - item.w / 2 + frac * item.w, row: item.row });
+
+        // Compás/beat en la statusbar: escritura directa y barata (sin
+        // analyzeMeasures()) — updateStatus() (ui.js) se abstiene de
+        // tocar #status-note mientras se reproduce, para no pisarlo.
+        const beatNum = Math.floor(item.beatStart) + 1;
+        statusNoteEl.textContent = `Compás ${item.measureIdx + 1} · beat ${beatNum}/${beatDen}`;
       }
       render();
     }
