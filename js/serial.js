@@ -78,6 +78,7 @@ export async function serialDisconnect() {
 function onPhysicalDisconnect(e) {
   if (e.target !== port) return;
   connected = false;
+  stopFlag = true;
   ackResolvers.forEach(r => r(false));
   ackResolvers = [];
   serialPlaying = false;
