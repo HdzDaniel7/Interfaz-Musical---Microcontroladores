@@ -130,6 +130,22 @@ function renderCodeHtml(marked, selectedIdx) {
 
 function updateCodePanel() {
   if (!_codeDirty && _lastCodeSelection === state.selectedNote) return;
+
+  // Solo cambió la selección (el código en sí sigue vigente): mover la
+  // clase "selected" al <span data-note> correspondiente sin regenerar
+  // ni volver a resaltar todo el HTML.
+  if (!_codeDirty) {
+    _lastCodeSelection = state.selectedNote;
+    const prev = document.querySelector('#code-output .code-note.selected');
+    if (prev) prev.classList.remove('selected');
+    const next = document.querySelector(`#code-output .code-note[data-note="${state.selectedNote}"]`);
+    if (next) {
+      next.classList.add('selected');
+      next.scrollIntoView({ block: 'nearest' });
+    }
+    return;
+  }
+
   _codeDirty = false;
   _lastCodeSelection = state.selectedNote;
 
