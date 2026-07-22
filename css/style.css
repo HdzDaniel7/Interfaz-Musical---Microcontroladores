@@ -589,6 +589,21 @@ input[type="range"]:focus-visible::-moz-range-thumb     { box-shadow: var(--glow
   border: 1px solid var(--border-subtle);
 }
 
+/* Paginación flotante (patrón visor de PDF) */
+.page-overlay {
+  position: absolute;
+  right: 18px;
+  bottom: 18px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md);
+}
+
 /* ── PANEL LATERAL ───────────────────────────────────────────── */
 .side-panel {
   width: var(--sidebar-w);
