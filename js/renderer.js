@@ -108,7 +108,19 @@ function keySigPad() {
   return ks ? ks * 8 + 6 : 0;
 }
 
+// Cache del layout: noteAt()/insertionIndexAt() lo reutilizan entre
+// eventos de mouse en vez de recalcularlo; render() lo invalida y
+// recalcula siempre, así queda fresco para el próximo evento.
+let _layoutCache = null;
+export function invalidateLayout() { _layoutCache = null; }
+
 export function buildLayout() {
+  if (_layoutCache) return _layoutCache;
+  _layoutCache = computeLayout();
+  return _layoutCache;
+}
+
+function computeLayout() {
   const measures  = analyzeMeasures();
   const capacity  = beatsPerMeasure();
   const measurePx = capacity * NW;
@@ -783,6 +795,7 @@ export function insertionIndexAt(cx, cy) {
 // ── Render principal ──────────────────────────────────────────
 export function render() {
   calcCanvas();
+  invalidateLayout(); // el repintado siempre parte de un layout fresco
   ctx.clearRect(0, 0, W, H);
 
   ctx.fillStyle = cssVar('--bg-score');
