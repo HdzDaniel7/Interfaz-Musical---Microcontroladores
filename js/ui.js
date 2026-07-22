@@ -144,6 +144,19 @@ function updateCodePanel() {
 // BARRA DE ESTADO + DISPONIBILIDAD DE HERRAMIENTAS
 // ══════════════════════════════════════════════════════════════
 
+// Descripción legible de una nota/silencio puntual (para statusbar y anuncios sr-only)
+function noteDescription(idx) {
+  const sn = state.notes[idx];
+  if (!sn) return 'Sin selección';
+  const acc = sn.accidental === 'sharp' ? '♯' : sn.accidental === 'flat' ? '♭'
+            : sn.accidental === 'natural' ? '♮' : '';
+  const dot = sn.dotted ? '.' : '';
+  const tri = sn.triplet ? ' ³' : '';
+  return sn.rest
+    ? `Silencio ${sn.dur}${dot}${tri}`
+    : `${NOTE_DISPLAY[sn.note]}${acc}${dot} · ${sn.dur}${tri}`;
+}
+
 function updateStatus() {
   const count = state.notes.length;
   $('status-count').textContent = `${count} nota${count !== 1 ? 's' : ''}`;
@@ -158,14 +171,7 @@ function updateStatus() {
   if (state.selection.length > 1) {
     $('status-note').textContent = `${state.selection.length} notas seleccionadas`;
   } else if (state.selectedNote >= 0 && state.notes[state.selectedNote]) {
-    const sn  = state.notes[state.selectedNote];
-    const acc = sn.accidental === 'sharp' ? '♯' : sn.accidental === 'flat' ? '♭'
-              : sn.accidental === 'natural' ? '♮' : '';
-    const dot = sn.dotted ? '.' : '';
-    const tri = sn.triplet ? ' ³' : '';
-    $('status-note').textContent = sn.rest
-      ? `Silencio ${sn.dur}${dot}${tri}`
-      : `${NOTE_DISPLAY[sn.note]}${acc}${dot} · ${sn.dur}${tri}`;
+    $('status-note').textContent = noteDescription(state.selectedNote);
   } else {
     $('status-note').textContent = 'Sin selección';
   }
@@ -174,6 +180,11 @@ function updateStatus() {
   $('prop-measures').textContent = measures.length;
   $('prop-complete').textContent =
     measures.filter(m => !m.overflow && !m.underflow).length;
+
+  const tono = $('key-sig-sel').selectedOptions[0].textContent;
+  canvas.setAttribute('aria-label',
+    `Partitura: ${count} nota${count !== 1 ? 's' : ''}, ` +
+    `${measures.length} compás${measures.length !== 1 ? 'es' : ''}, tono ${tono}`);
 
   updateRepeatList(measures.length);
   updateToolbarAvailability();
@@ -445,6 +456,7 @@ function moveSelection(delta) {
   state.selectedNote = i;
   state.selection = [i];
   render();
+  $('sr-live').textContent = noteDescription(i);
 }
 
 // ══════════════════════════════════════════════════════════════
