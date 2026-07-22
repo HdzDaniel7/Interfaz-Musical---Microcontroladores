@@ -10,8 +10,15 @@ import { initUI } from './ui.js';
 const savedTheme = loadTheme();
 if (savedTheme === 'dark' || savedTheme === 'light') {
   document.documentElement.setAttribute('data-theme', savedTheme);
-} else if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
-  document.documentElement.setAttribute('data-theme', 'dark');
+} else {
+  const darkMedia = window.matchMedia('(prefers-color-scheme: dark)');
+  document.documentElement.setAttribute('data-theme', darkMedia.matches ? 'dark' : 'light');
+  // Sigue al sistema en vivo mientras el usuario no haya elegido un tema explícito
+  darkMedia.addEventListener('change', e => {
+    if (!loadTheme()) {
+      document.documentElement.setAttribute('data-theme', e.matches ? 'dark' : 'light');
+    }
+  });
 }
 
 // ── Recuperar proyecto del guardado automático ────────────────
