@@ -21,6 +21,35 @@
         <span class="brand-icon">♪</span>
       </div>
 
+      <div class="tool-group" role="group" aria-label="Notas">
+        <span class="group-label">Nota</span>
+        <button class="tool-btn" data-dur="TT" data-rest="0" aria-pressed="false" title="Redonda (1)"><span class="sym">𝅝</span><span class="lbl">Rdon</span></button>
+        <button class="tool-btn" data-dur="DT" data-rest="0" aria-pressed="false" title="Blanca (2)"><span class="sym">𝅗𝅥</span><span class="lbl">Blan</span></button>
+        <button class="tool-btn active" data-dur="T" data-rest="0" aria-pressed="true" title="Negra (3)"><span class="sym">♩</span><span class="lbl">Negr</span></button>
+        <button class="tool-btn" data-dur="MT" data-rest="0" aria-pressed="false" title="Corchea (4)"><span class="sym">♪</span><span class="lbl">Corc</span></button>
+        <button class="tool-btn" data-dur="CT" data-rest="0" aria-pressed="false" title="Semicorchea (5)"><span class="sym">𝅘𝅥𝅯</span><span class="lbl">Semi</span></button>
+        <button class="tool-btn dot-btn" id="dot-btn" aria-pressed="false" title="Puntillo (.)"><span class="sym">•</span><span class="lbl">Punt</span></button>
+        <button class="tool-btn dot-btn" id="triplet-btn" aria-pressed="false" title="Tresillo (T): 3 figuras en el tiempo de 2"><span class="sym">³</span><span class="lbl">Tres</span></button>
+      </div>
+
+      <div class="tool-group" role="group" aria-label="Silencios">
+        <span class="group-label">Silencio</span>
+        <button class="tool-btn" data-dur="TT" data-rest="1" aria-pressed="false" title="Silencio de redonda"><span class="sym">𝄻</span><span class="lbl">Rdon</span></button>
+        <button class="tool-btn" data-dur="DT" data-rest="1" aria-pressed="false" title="Silencio de blanca"><span class="sym">𝄼</span><span class="lbl">Blan</span></button>
+        <button class="tool-btn" data-dur="T"  data-rest="1" aria-pressed="false" title="Silencio de negra"><span class="sym">𝄽</span><span class="lbl">Negr</span></button>
+        <button class="tool-btn" data-dur="MT" data-rest="1" aria-pressed="false" title="Silencio de corchea"><span class="sym">𝄾</span><span class="lbl">Corc</span></button>
+        <button class="tool-btn" data-dur="CT" data-rest="1" aria-pressed="false" title="Silencio de semicorchea"><span class="sym">𝄿</span><span class="lbl">Semi</span></button>
+      </div>
+
+      <div class="tool-group" role="group" aria-label="Accidentales">
+        <span class="group-label">Acc.</span>
+        <button class="acc-btn active" id="acc-none"    data-acc="none"    aria-pressed="true"  title="Automático: sigue la armadura">·</button>
+        <button class="acc-btn"        id="acc-natural" data-acc="natural" aria-pressed="false" title="Natural (anula la armadura)">♮</button>
+        <button class="acc-btn"        id="acc-sharp"   data-acc="sharp"   aria-pressed="false" title="Sostenido">♯</button>
+        <button class="acc-btn"        id="acc-flat"    data-acc="flat"    aria-pressed="false" title="Bemol">♭</button>
+      </div>
+      <div class="divider"></div>
+
       <input class="project-title" id="title-input" type="text"
              value="Mi_Cancion" placeholder="Título del proyecto"
              title="Nombre del proyecto">
@@ -65,35 +94,6 @@
         <span class="field-label">MCU</span>
         <select class="sel-input" id="mcu-sel"></select>
       </label>
-      <div class="divider"></div>
-
-      <div class="tool-group" role="group" aria-label="Notas">
-        <span class="group-label">Nota</span>
-        <button class="tool-btn" data-dur="TT" data-rest="0" aria-pressed="false" title="Redonda (1)"><span class="sym">𝅝</span><span class="lbl">Rdon</span></button>
-        <button class="tool-btn" data-dur="DT" data-rest="0" aria-pressed="false" title="Blanca (2)"><span class="sym">𝅗𝅥</span><span class="lbl">Blan</span></button>
-        <button class="tool-btn active" data-dur="T" data-rest="0" aria-pressed="true" title="Negra (3)"><span class="sym">♩</span><span class="lbl">Negr</span></button>
-        <button class="tool-btn" data-dur="MT" data-rest="0" aria-pressed="false" title="Corchea (4)"><span class="sym">♪</span><span class="lbl">Corc</span></button>
-        <button class="tool-btn" data-dur="CT" data-rest="0" aria-pressed="false" title="Semicorchea (5)"><span class="sym">𝅘𝅥𝅯</span><span class="lbl">Semi</span></button>
-        <button class="tool-btn dot-btn" id="dot-btn" aria-pressed="false" title="Puntillo (.)"><span class="sym">•</span><span class="lbl">Punt</span></button>
-        <button class="tool-btn dot-btn" id="triplet-btn" aria-pressed="false" title="Tresillo (T): 3 figuras en el tiempo de 2"><span class="sym">³</span><span class="lbl">Tres</span></button>
-      </div>
-
-      <div class="tool-group" role="group" aria-label="Silencios">
-        <span class="group-label">Silencio</span>
-        <button class="tool-btn" data-dur="TT" data-rest="1" aria-pressed="false" title="Silencio de redonda"><span class="sym">𝄻</span><span class="lbl">Rdon</span></button>
-        <button class="tool-btn" data-dur="DT" data-rest="1" aria-pressed="false" title="Silencio de blanca"><span class="sym">𝄼</span><span class="lbl">Blan</span></button>
-        <button class="tool-btn" data-dur="T"  data-rest="1" aria-pressed="false" title="Silencio de negra"><span class="sym">𝄽</span><span class="lbl">Negr</span></button>
-        <button class="tool-btn" data-dur="MT" data-rest="1" aria-pressed="false" title="Silencio de corchea"><span class="sym">𝄾</span><span class="lbl">Corc</span></button>
-        <button class="tool-btn" data-dur="CT" data-rest="1" aria-pressed="false" title="Silencio de semicorchea"><span class="sym">𝄿</span><span class="lbl">Semi</span></button>
-      </div>
-
-      <div class="tool-group" role="group" aria-label="Accidentales">
-        <span class="group-label">Acc.</span>
-        <button class="acc-btn active" id="acc-none"    data-acc="none"    aria-pressed="true"  title="Automático: sigue la armadura">·</button>
-        <button class="acc-btn"        id="acc-natural" data-acc="natural" aria-pressed="false" title="Natural (anula la armadura)">♮</button>
-        <button class="acc-btn"        id="acc-sharp"   data-acc="sharp"   aria-pressed="false" title="Sostenido">♯</button>
-        <button class="acc-btn"        id="acc-flat"    data-acc="flat"    aria-pressed="false" title="Bemol">♭</button>
-      </div>
     </div>
 
     <!-- Fila 2: acciones -->
