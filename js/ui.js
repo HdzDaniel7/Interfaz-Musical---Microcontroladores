@@ -11,12 +11,13 @@ import {
   NOTE_DISPLAY, NOTE_SLOT, SLOT_MIN, SLOT_MAX, SLOT_TO_NOTE, Z2_MIN, Z2_MAX,
 } from './constants.js';
 import {
-  analyzeMeasures, availableDurations, fitsAtIndex, sanitizedRepeats,
+  analyzeMeasures, availableDurations, fitsAtIndex, sanitizedRepeats, keyAt,
 } from './music.js';
 import {
   canvas, render, requestRender, setCursor, clearCursor,
   getRow, yToNote, noteAt, insertionIndexAt, measureAt, onAfterRender, invalidateThemeCache,
-  setActiveNote, getZoom, setZoom,
+  setActiveNote, getZoom, setZoom, setKeyChangeGhost, clearKeyChangeGhost,
+  setRepeatGhost, clearRepeatGhost,
 } from './renderer.js';
 import { playScore, stopScore, setVolume, previewNote, isPlaying } from './audio.js';
 import {
@@ -192,6 +193,7 @@ function updateStatus() {
   const sig = [
     state.notes.length, state.selectedNote, state.selection.length,
     state.timeSignature.num, state.timeSignature.den, state.keySignature,
+    state.keyChanges.map(k => `${k.measure}:${k.key}`).join(','),
     state.mcu, state.repeats.length, playing,
     sn ? `${sn.note}|${sn.dur}|${sn.dotted}|${sn.triplet}|${sn.rest}|${sn.accidental}` : '',
   ].join('|');
@@ -232,7 +234,65 @@ function updateStatus() {
     `${measures.length} compás${measures.length !== 1 ? 'es' : ''}, tono ${tono}`);
 
   updateRepeatList(measures.length);
+  updateKeyChangeList(measures.length);
   updateToolbarAvailability();
+}
+
+// ── Cambios de armadura por compás ────────────────────────────
+function keyLabel(key) {
+  const opt = [...$('key-change-key').options].find(o => o.value === String(key));
+  return opt ? opt.textContent : String(key);
+}
+
+// Agrega (o reemplaza) el cambio de armadura desde un compás (1-based en la UI)
+function addKeyChange(measure1, key) {
+  const count = analyzeMeasures().length;
+  const mi = measure1 - 1; // a índice 0-based
+  if (isNaN(mi) || mi < 1 || mi >= count) {
+    showToast('El cambio de tonalidad debe caer en el compás 2 o posterior', { type: 'warn' });
+    return false;
+  }
+  pushHistory();
+  state.keyChanges = state.keyChanges.filter(kc => kc.measure !== mi);
+  state.keyChanges.push({ measure: mi, key });
+  state.keyChanges.sort((a, b) => a.measure - b.measure);
+  markCodeDirty();
+  render();
+  scheduleSave();
+  showToast(`Tonalidad: ${keyLabel(key)} desde el compás ${mi + 1}`, { type: 'success' });
+  return true;
+}
+
+let _keyChangeListSig = '';
+
+function updateKeyChangeList(measureCount) {
+  const sig = state.keyChanges.map(k => `${k.measure}:${k.key}`).join(',') + '|' + measureCount;
+  if (sig === _keyChangeListSig) return;
+  _keyChangeListSig = sig;
+
+  const list = $('key-change-list');
+  list.innerHTML = '';
+  state.keyChanges.forEach((kc, i) => {
+    const outOfRange = kc.measure >= measureCount;
+    const item = document.createElement('div');
+    item.className = 'repeat-item';
+    item.innerHTML =
+      `<span>Compás <strong>${kc.measure + 1}</strong> → <strong>${keyLabel(kc.key)}</strong>` +
+      `${outOfRange ? ' <em>(fuera de rango)</em>' : ''}</span>`;
+    const del = document.createElement('button');
+    del.className = 'repeat-del';
+    del.title = 'Quitar cambio de tonalidad';
+    del.textContent = '✕';
+    del.addEventListener('click', () => {
+      pushHistory();
+      state.keyChanges.splice(i, 1);
+      markCodeDirty();
+      render();
+      scheduleSave();
+    });
+    item.appendChild(del);
+    list.appendChild(item);
+  });
 }
 
 // ── Lista de repeticiones (solo se reconstruye si cambió) ─────
@@ -477,9 +537,16 @@ function startPlayback() {
   if (toPC) playScore(from);
 
   if (toHW && isSerialConnected()) {
-    // En 'both' el playhead lo anima Web Audio; en 'hw' lo movemos aquí.
+    // En 'both' el playhead lo anima Web Audio (y escribe compás/beat);
+    // en 'hw' lo movemos aquí y escribimos la nota activa en la statusbar
+    // (updateStatus se abstiene de tocar #status-note mientras se reproduce).
     const onNote = outputMode === 'hw'
-      ? idx => { setActiveNote(idx); render(); }
+      ? idx => {
+          setActiveNote(idx);
+          render();
+          $('status-note').textContent =
+            state.notes[idx] ? noteDescription(idx) : 'Reproduciendo…';
+        }
       : null;
     serialPlay(from, { onNote });
   }
@@ -524,6 +591,7 @@ function bindCanvas() {
   canvas.addEventListener('pointerdown', e => {
     const { cx, cy } = canvasPos(e);
 
+    if (_keyPicking)    { handleKeyPickClick(cx, cy); return; }
     if (_repeatPicking) { handleRepeatPickClick(cx, cy, e.clientX, e.clientY); return; }
 
     canvas.setPointerCapture(e.pointerId);
@@ -595,9 +663,23 @@ function bindCanvas() {
   canvas.addEventListener('pointermove', e => {
     const { cx, cy } = canvasPos(e);
 
-    // En modo "elegir en la partitura" no hay cursor fantasma de inserción:
-    // el clic elige un compás, no agrega una nota.
-    if (_repeatPicking) { clearCursor(); requestRender(); return; }
+    // En modo "elegir en la partitura" / "colocar armadura" no hay cursor
+    // fantasma de inserción de nota: el clic elige un compás.
+    if (_keyPicking) {
+      clearCursor();
+      const mi = measureAt(cx, cy);
+      // Los cambios de armadura solo aplican desde el compás 2 (mi ≥ 1).
+      setKeyChangeGhost(mi >= 1 ? mi : -1, parseInt($('key-tool-sel').value, 10) || 0);
+      requestRender();
+      return;
+    }
+    if (_repeatPicking) {
+      clearCursor();
+      const mi = measureAt(cx, cy);
+      setRepeatGhost(_repeatPickFrom >= 0 ? _repeatPickFrom : mi, mi);
+      requestRender();
+      return;
+    }
 
     setCursor(cx, cy, getRow(cy));
 
@@ -637,6 +719,8 @@ function bindCanvas() {
   canvas.addEventListener('pointerleave', () => {
     endDrag();
     clearCursor();
+    if (_keyPicking) clearKeyChangeGhost();
+    if (_repeatPicking) clearRepeatGhost();
     requestRender();
   });
 }
@@ -689,11 +773,14 @@ function updateZoomLabel() {
   $('zoom-ind').textContent = Math.round(getZoom() * 100) + '%';
 }
 
+let _zoomSaveDebounce = null;
 function applyZoomDelta(delta) {
   setZoom(getZoom() + delta);
   updateZoomLabel();
   requestRender();
-  saveUIPrefs({ zoom: getZoom() });
+  // Ctrl+rueda dispara muchos ticks seguidos: no escribir localStorage en cada uno.
+  clearTimeout(_zoomSaveDebounce);
+  _zoomSaveDebounce = setTimeout(() => saveUIPrefs({ zoom: getZoom() }), 300);
 }
 
 function bindZoom() {
@@ -708,6 +795,40 @@ function bindZoom() {
     e.preventDefault();
     applyZoomDelta(e.deltaY < 0 ? ZOOM_STEP : -ZOOM_STEP);
   }, { passive: false });
+}
+
+// ── Popover "⚙ Ajustes" (título/z2/compás/armadura inicial/BPM/MCU) ──
+// Los controles en sí no cambian de comportamiento (mismos ids que
+// bindToolbar()/syncControlsFromState() ya usan); esto solo alterna la
+// visibilidad del contenedor, igual que cualquier menú desplegable.
+function bindSettingsPopover() {
+  const btn = $('btn-settings');
+  const pop = $('settings-popover');
+
+  const onOutsideClick = e => {
+    if (!pop.contains(e.target) && e.target !== btn && !btn.contains(e.target)) close();
+  };
+  const onKeydown = e => { if (e.key === 'Escape') close(); };
+
+  function close() {
+    pop.hidden = true;
+    btn.setAttribute('aria-expanded', 'false');
+    document.removeEventListener('pointerdown', onOutsideClick, true);
+    document.removeEventListener('keydown', onKeydown, true);
+  }
+  function open() {
+    pop.hidden = false;
+    btn.setAttribute('aria-expanded', 'true');
+    // Registrar en el siguiente tick: si no, el mismo pointerdown que
+    // abrió el popover lo cerraría de inmediato (mismo patrón que el
+    // popover de repeticiones).
+    setTimeout(() => {
+      document.addEventListener('pointerdown', onOutsideClick, true);
+      document.addEventListener('keydown', onKeydown, true);
+    }, 0);
+  }
+
+  btn.addEventListener('click', () => (pop.hidden ? open() : close()));
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -741,6 +862,8 @@ function bindToolbar() {
     if (isNaN(z)) z = 5;
     z = Math.max(Z2_MIN, Math.min(Z2_MAX, z));
     e.target.value = z;
+    if (z === state.z2) return;      // sin cambio real → no ensuciar el historial
+    pushHistory();                   // la octava base cambia la altura sonora y el código: deshacible
     state.z2 = z;
     markCodeDirty();
     updateCodePanel();
@@ -752,6 +875,8 @@ function bindToolbar() {
     if (isNaN(b)) b = 120;
     b = Math.max(40, Math.min(300, b));
     e.target.value = b;
+    if (b === state.bpm) return;     // sin cambio real → no ensuciar el historial
+    pushHistory();                   // el tempo va en el firmware: deshacible como paso propio
     state.bpm = b;
     markCodeDirty();
     updateCodePanel();
@@ -760,6 +885,7 @@ function bindToolbar() {
 
   $('time-sig-sel').addEventListener('change', e => {
     const [num, den] = e.target.value.split('/').map(Number);
+    pushHistory(); // cambiar de compás reflowa toda la partitura: hacerlo deshacible
     state.timeSignature = { num, den };
     markCodeDirty();
     render();
@@ -767,6 +893,7 @@ function bindToolbar() {
   });
 
   $('key-sig-sel').addEventListener('change', e => {
+    pushHistory(); // la armadura altera alturas y dibujo: deshacible como paso propio
     state.keySignature = parseInt(e.target.value, 10) || 0;
     markCodeDirty();
     render();
@@ -1002,10 +1129,13 @@ let _repeatPopoverEl = null;
 function setRepeatPicking(on) {
   _repeatPicking  = on;
   _repeatPickFrom = -1;
+  if (on) setKeyPicking(false);
+  clearRepeatGhost();
   const btn = $('btn-repeat-pick');
   btn.classList.toggle('active', on);
   btn.setAttribute('aria-pressed', String(on));
   canvas.style.cursor = on ? 'crosshair' : '';
+  requestRender();
 }
 
 function handleRepeatPickClick(cx, cy, clientX, clientY) {
@@ -1091,6 +1221,127 @@ function bindRepeatPicker() {
       showToast('Hacé clic en el compás inicial de la repetición', { type: 'info', duration: 2400 });
     }
   });
+}
+
+// ── Cambios de armadura (sección Tonalidad) ───────────────────
+function bindKeyChanges() {
+  $('key-change-add').addEventListener('click', () => {
+    const measure = parseInt($('key-change-measure').value, 10);
+    const key     = parseInt($('key-change-key').value, 10) || 0;
+    addKeyChange(measure, key);
+  });
+}
+
+// ── Herramienta "Armadura": modo activo, próximo clic en un compás
+// (2 o posterior) coloca ahí la armadura elegida en #key-tool-sel.
+// Excluyente con la inserción de notas y con "elegir repetición"
+// (mismo patrón que _repeatPicking).
+let _keyPicking = false;
+
+function setKeyPicking(on) {
+  _keyPicking = on;
+  if (on) setRepeatPicking(false);
+  else clearKeyChangeGhost();
+  const btn = $('btn-key-pick');
+  btn.classList.toggle('active', on);
+  btn.setAttribute('aria-pressed', String(on));
+  canvas.style.cursor = on ? 'crosshair' : '';
+  requestRender();
+}
+
+function handleKeyPickClick(cx, cy) {
+  const mi = measureAt(cx, cy);
+  if (mi < 0) {
+    showToast('Hacé clic sobre un compás de la partitura', { type: 'warn', duration: 2000 });
+    return;
+  }
+  const key = parseInt($('key-tool-sel').value, 10) || 0;
+  addKeyChange(mi + 1, key);
+}
+
+function bindKeyPicker() {
+  $('btn-key-pick').addEventListener('click', () => {
+    if (_keyPicking) {
+      setKeyPicking(false);
+    } else {
+      setKeyPicking(true);
+      showToast('Hacé clic en el compás (2 o posterior) donde empieza la nueva armadura',
+        { type: 'info', duration: 2400 });
+    }
+  });
+}
+
+// ── Panel flotante de repeticiones (acoplable/arrastrable/fijable) ──
+function bindRepeatPanel() {
+  const panel  = $('repeat-panel');
+  const head   = $('repeat-panel-head');
+  const toggle = $('btn-repeat-toggle');
+  const pinBtn = $('btn-repeat-pin');
+  const prefs  = uiPrefs.repeatPanel || {};
+  let pinned   = prefs.pinned !== false; // fijado por defecto
+
+  const reflectToggle = () => toggle.setAttribute('aria-pressed', String(!panel.hidden));
+  const reflectPin    = () => pinBtn.setAttribute('aria-pressed', String(pinned));
+
+  const save = () => saveUIPrefs({ repeatPanel: {
+    open:   !panel.hidden,
+    pinned,
+    free:   panel.classList.contains('free'),
+    left:   panel.style.left || null,
+    top:    panel.style.top  || null,
+  }});
+
+  const setDocked = () => {
+    panel.classList.remove('free');
+    panel.style.left = '';
+    panel.style.top  = '';
+  };
+
+  // Restaurar posición libre guardada
+  if (prefs.free && prefs.left && prefs.top) {
+    panel.classList.add('free');
+    panel.style.left = prefs.left;
+    panel.style.top  = prefs.top;
+  }
+
+  const open  = () => { panel.hidden = false; reflectToggle(); save(); };
+  const close = () => { panel.hidden = true;  reflectToggle(); save(); };
+
+  toggle.addEventListener('click', () => (panel.hidden ? open() : close()));
+  $('btn-repeat-close').addEventListener('click', close);
+  $('btn-repeat-dock').addEventListener('click', () => { setDocked(); save(); });
+  pinBtn.addEventListener('click', () => { pinned = !pinned; reflectPin(); save(); });
+  reflectPin();
+
+  // Arrastre por la cabecera (clamp dentro del área de la partitura)
+  let dragging = false, sx = 0, sy = 0, sl = 0, st = 0;
+  head.addEventListener('pointerdown', e => {
+    if (e.target.closest('.repeat-panel-btn')) return; // no arrastrar al tocar un botón
+    dragging = true;
+    head.setPointerCapture(e.pointerId);
+    const wrap = $('score-container').getBoundingClientRect();
+    const r    = panel.getBoundingClientRect();
+    sx = e.clientX; sy = e.clientY;
+    sl = r.left - wrap.left; st = r.top - wrap.top;
+    panel.classList.add('free');
+    panel.style.left = sl + 'px';
+    panel.style.top  = st + 'px';
+  });
+  head.addEventListener('pointermove', e => {
+    if (!dragging) return;
+    const wrap = $('score-container').getBoundingClientRect();
+    let nl = Math.max(0, Math.min(sl + (e.clientX - sx), wrap.width  - panel.offsetWidth));
+    let nt = Math.max(0, Math.min(st + (e.clientY - sy), wrap.height - panel.offsetHeight));
+    panel.style.left = nl + 'px';
+    panel.style.top  = nt + 'px';
+  });
+  const endDrag = () => { if (dragging) { dragging = false; save(); } };
+  head.addEventListener('pointerup', endDrag);
+  head.addEventListener('pointercancel', endDrag);
+
+  // Apertura inicial: solo si estaba fijado y abierto
+  if (pinned && prefs.open) { panel.hidden = false; }
+  reflectToggle();
 }
 
 function bindActions() {
@@ -1326,9 +1577,15 @@ function bindKeyboard() {
     switch (e.key) {
       case 'Delete':
       case 'Backspace':
-        if (state.selectedNote >= 0) { e.preventDefault(); doDelete(); }
+        // Backspace dispara "atrás" en algunos navegadores: prevenirlo siempre
+        // fuera de campos de texto para no perder el trabajo sin querer.
+        e.preventDefault();
+        if (state.selectedNote >= 0) doDelete();
         break;
       case ' ':
+        // No secuestrar Espacio cuando el foco está en un botón: dejá que
+        // Espacio lo active (evita, p. ej., que Tab+Espacio en "Guardar" reproduzca).
+        if (document.activeElement && document.activeElement.tagName === 'BUTTON') break;
         e.preventDefault();
         anyPlaying() ? stopAll() : startPlayback();
         break;
@@ -1395,6 +1652,10 @@ export function initUI() {
   bindKeyboard();
   bindSidebarResizer();
   bindZoom();
+  bindKeyChanges();
+  bindKeyPicker();
+  bindRepeatPanel();
+  bindSettingsPopover();
 
   window.addEventListener('resize', requestRender);
 

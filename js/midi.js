@@ -4,7 +4,10 @@
    ============================================================ */
 
 import { state } from './state.js';
-import { resolvePitch, expandedNoteIndices, computeTieChains } from './music.js';
+import {
+  resolvePitch, expandedNoteIndices, computeTieChains,
+  analyzeMeasures, buildNoteKeyMap,
+} from './music.js';
 import { DUR_BEATS, NOTE_SLOT, Z2_MIN, Z2_MAX } from './constants.js';
 import { safeFileName } from './codegen/common.js';
 
@@ -42,8 +45,8 @@ function writeVLQ(arr, val) {
 // ── Conversión nota → número MIDI ─────────────────────────────
 // resolvePitch ya maneja accidentales y cambios de octava
 // (SI♯ → DO octava arriba, DO♭ → SI octava abajo, etc.)
-function noteToMidi(noteName, accidental, z2val) {
-  const { pc, octave } = resolvePitch(noteName, accidental);
+function noteToMidi(noteName, accidental, z2val, ks) {
+  const { pc, octave } = resolvePitch(noteName, accidental, ks);
   const midiNote = 12 * (z2val + octave) + pc;
   return Math.max(0, Math.min(127, midiNote));
 }
@@ -99,17 +102,32 @@ export function exportMidi() {
   const events = [];
   let currentTick = 0;
 
-  // Orden de reproducción con repeticiones expandidas y ligaduras
-  const { chains, consumed, legato } = computeTieChains();
+  // Orden de reproducción con repeticiones expandidas y ligaduras.
+  // Armadura efectiva por compás (respeta los cambios de tonalidad).
+  const keyMap = buildNoteKeyMap(analyzeMeasures());
+  const { chains, consumed, legato } = computeTieChains(state.notes, idx => keyMap[idx]);
+
+  // Meta-eventos de armadura (FF 59): uno al inicio y uno en cada cambio.
+  // keyMap ya está indexado por nota original, así que un mismo compás
+  // repetido (state.repeats) siempre reporta la misma armadura — no hace
+  // falta distinguir "primera pasada" de "repetición".
+  let lastKeySig = null;
 
   expandedNoteIndices().forEach(idx => {
     if (consumed.has(idx)) return;
+
+    const ks = keyMap[idx] ?? 0;
+    if (ks !== lastKeySig) {
+      events.push({ tick: currentTick, type: 'keysig', ks });
+      lastKeySig = ks;
+    }
+
     const n       = notes[idx];
     const members = chains.get(idx) || [idx];
     const ticks   = members.reduce((s, k) => s + noteTicks(notes[k]), 0);
 
     if (!n.rest) {
-      const midiNote  = noteToMidi(n.note, n.accidental, z2val);
+      const midiNote  = noteToMidi(n.note, n.accidental, z2val, keyMap[idx]);
       const legatoOut = legato.has(members[members.length - 1]);
       events.push({ tick: currentTick, type: 'on', note: midiNote, vel: 80 });
       // Legato: dura completo; normal: articulación 5%
@@ -120,13 +138,9 @@ export function exportMidi() {
     currentTick += ticks;
   });
 
-  // Ordenar por tick, Note Off antes de Note On si mismo tick
-  events.sort((a, b) => {
-    if (a.tick !== b.tick) return a.tick - b.tick;
-    if (a.type === 'off' && b.type === 'on') return -1;
-    if (a.type === 'on' && b.type === 'off') return 1;
-    return 0;
-  });
+  // Ordenar por tick; a igual tick, primero armadura, luego Note Off, luego Note On.
+  const TYPE_RANK = { keysig: 0, off: 1, on: 2 };
+  events.sort((a, b) => a.tick - b.tick || TYPE_RANK[a.type] - TYPE_RANK[b.type]);
 
   // Escribir eventos con delta times
   let lastTick = 0;
@@ -138,10 +152,16 @@ export function exportMidi() {
       writeByte(track, 0x90); // Note On canal 0
       writeByte(track, ev.note);
       writeByte(track, ev.vel);
-    } else {
+    } else if (ev.type === 'off') {
       writeByte(track, 0x80); // Note Off canal 0
       writeByte(track, ev.note);
       writeByte(track, 0);
+    } else { // Key Signature meta-evento
+      writeByte(track, 0xFF);
+      writeByte(track, 0x59);
+      writeByte(track, 0x02);
+      writeByte(track, ev.ks); // sf: sostenidos(+)/bemoles(−), complemento a dos vía & 0xFF
+      writeByte(track, 0x00); // mi: todas las armaduras de esta app son mayores
     }
   });
 

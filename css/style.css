@@ -569,6 +569,43 @@ input[type="range"]::-moz-range-thumb {
 input[type="range"]:focus-visible::-webkit-slider-thumb { box-shadow: var(--glow-accent); }
 input[type="range"]:focus-visible::-moz-range-thumb     { box-shadow: var(--glow-accent); }
 
+/* ── Popover "⚙ Ajustes" (título/z2/compás/armadura inicial/BPM/MCU) ──
+   Agrupa los controles de proyecto detrás del botón engranaje para que
+   la fila 1 quede solo con las herramientas de composición (Fase 8.5). */
+.settings-wrap { position: relative; }
+
+.settings-popover {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  padding: 12px 14px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  min-width: 230px;
+}
+.settings-popover[hidden] { display: none; }
+
+.settings-popover-title {
+  font-size: var(--text-xs);
+  font-weight: 700;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  margin-bottom: 2px;
+}
+
+.settings-popover .field-group { justify-content: space-between; gap: 10px; }
+.settings-popover .project-title { width: 100%; border-color: var(--border-subtle); }
+.settings-popover .sel-input,
+.settings-popover .num-input { width: 130px; }
+.settings-popover .num-input { width: 60px; }
+
 /* Indicador de página */
 .page-label {
   font-size: var(--text-xs);
@@ -856,8 +893,64 @@ kbd {
   justify-self: start;
 }
 
+/* Panel flotante de repeticiones (acoplado al pie del pentagrama) */
+.repeat-panel {
+  position: absolute;
+  left: 50%;
+  bottom: 18px;
+  transform: translateX(-50%);
+  width: min(340px, calc(100% - 36px));
+  z-index: 15;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px 12px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+}
+.repeat-panel[hidden] { display: none; }
+/* Posición libre tras arrastrar (inline left/top mandan sobre el acople) */
+.repeat-panel.free { left: 0; top: 0; right: auto; bottom: auto; transform: none; }
+
+.repeat-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: grab;
+  margin: -2px 0 2px;
+  -webkit-user-select: none;
+  user-select: none;
+}
+.repeat-panel-head:active { cursor: grabbing; }
+
+.repeat-panel-title {
+  font-size: var(--text-xs);
+  font-weight: 700;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+
+.repeat-panel-tools { display: flex; gap: 2px; }
+
+.repeat-panel-btn {
+  width: 24px;
+  height: 24px;
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1;
+}
+.repeat-panel-btn:hover { background: var(--bg-hover); color: var(--text-primary); }
+.repeat-panel-btn[aria-pressed="true"] { color: var(--accent); }
+
+.rp-pick { width: 100%; }
+.rp-pick.active { background: var(--accent); color: var(--accent-text); }
+
 /* Repeticiones */
-#btn-repeat-pick { margin-bottom: 8px; }
+#btn-repeat-pick { margin-bottom: 0; }
 
 .repeat-form {
   display: flex;

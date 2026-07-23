@@ -4,7 +4,7 @@
 
 import { NOTE_SLOT, DUR_BEATS, Z2_MIN, Z2_MAX } from './constants.js';
 
-export const PROJECT_VERSION = 2;
+export const PROJECT_VERSION = 3;
 
 export const state = {
   notes:         [],
@@ -15,7 +15,11 @@ export const state = {
   bpm:           120,
   mcu:           'esp32',
   timeSignature: { num: 4, den: 4 },
-  keySignature:  0,    // sostenidos (+) / bemoles (−), 0 = Do mayor
+  keySignature:  0,    // armadura INICIAL (compás 1): sostenidos (+) / bemoles (−), 0 = Do M
+  // Cambios de armadura a mitad de pieza: [{ measure, key }] (measure = índice
+  // de compás 0-based, ≥1; key = semitonos de armadura, −7..7). La armadura
+  // efectiva de un compás es keySignature + el último cambio con measure ≤ compás.
+  keyChanges:    [],
   selectedNote:  -1,   // nota primaria (sync con el código)
   selection:     [],   // selección múltiple (incluye la primaria)
   history:       [],
@@ -38,6 +42,7 @@ function snapshotState() {
     repeats:       state.repeats,
     timeSignature: state.timeSignature,
     keySignature:  state.keySignature,
+    keyChanges:    state.keyChanges,
     bpm:           state.bpm,
     z2:            state.z2,
     title:         state.title,
@@ -58,6 +63,7 @@ function applySnapshot(snap) {
   state.repeats        = snap.repeats;
   state.timeSignature  = snap.timeSignature;
   state.keySignature   = snap.keySignature;
+  state.keyChanges     = snap.keyChanges || [];
   state.bpm            = snap.bpm;
   state.z2             = snap.z2;
   state.title          = snap.title;
@@ -107,6 +113,7 @@ export function clearAll() {
   pushHistory();
   state.notes = [];
   state.repeats = [];
+  state.keyChanges = []; // los cambios de armadura referenciaban compases ya inexistentes
   clearSelection();
   return true;
 }
@@ -182,9 +189,23 @@ function sanitizeRepeatsShape(raw) {
     .map(r => ({ from: r.from, to: r.to, times: r.times }));
 }
 
+// Cambios de armadura: measure ≥ 1 (el compás 1 usa keySignature), key −7..7,
+// un solo cambio por compás (el último gana), ordenados por compás.
+function sanitizeKeyChanges(raw) {
+  if (!Array.isArray(raw)) return [];
+  const seen = new Set();
+  return raw
+    .filter(kc => kc && Number.isInteger(kc.measure) && Number.isInteger(kc.key))
+    .filter(kc => kc.measure >= 1 && kc.key >= -7 && kc.key <= 7)
+    .sort((a, b) => a.measure - b.measure)
+    .filter(kc => (seen.has(kc.measure) ? false : (seen.add(kc.measure), true)))
+    .map(kc => ({ measure: kc.measure, key: kc.key }));
+}
+
 function applyProjectData(d) {
   state.notes         = sanitizeNotes(d.notes);
   state.repeats       = sanitizeRepeatsShape(d.repeats);
+  state.keyChanges    = sanitizeKeyChanges(d.keyChanges);
   state.z2            = clampZ2(d.z2 ?? 5);
   state.title         = typeof d.title === 'string' && d.title.trim() ? d.title : 'Mi_Cancion';
   state.bpm           = clampBpm(d.bpm ?? 120);
@@ -209,6 +230,7 @@ export function exportProject() {
     mcu:           state.mcu,
     timeSignature: state.timeSignature,
     keySignature:  state.keySignature,
+    keyChanges:    state.keyChanges,
     extraCode:     state.extraCode,
     repeats:       state.repeats,
   }, null, 2);

@@ -9,7 +9,7 @@ import {
 import { state } from './state.js';
 import {
   beatsPerMeasure, noteDurationBeats, analyzeMeasures, fitsAtIndex,
-  sanitizedRepeats,
+  sanitizedRepeats, keyAt,
 } from './music.js';
 
 export const canvas = document.getElementById('score-canvas');
@@ -34,6 +34,19 @@ let playhead = null;             // { x, row } — cabezal de reproducción
 
 export function setCursor(x, y, row) { cursorX = x; cursorY = y; cursorRow = row; }
 export function clearCursor()        { cursorX = -1; cursorY = -1; cursorRow = -1; }
+
+// ── Fantasma de la herramienta "Armadura" (compás objetivo + key a colocar) ──
+let keyGhostMeasure = -1, keyGhostKey = 0;
+export function setKeyChangeGhost(measureIdx, key) { keyGhostMeasure = measureIdx; keyGhostKey = key; }
+export function clearKeyChangeGhost()               { keyGhostMeasure = -1; }
+
+// ── Fantasma de "elegir en la partitura" para repeticiones (mismo patrón
+// que el de armadura: resalta el/los compás(es) bajo el cursor antes de
+// hacer clic, para que ambas herramientas "activar modo → clic en compás"
+// den el mismo feedback visual — Fase 8.7) ──
+let repeatGhostFrom = -1, repeatGhostTo = -1;
+export function setRepeatGhost(from, to) { repeatGhostFrom = from; repeatGhostTo = to; }
+export function clearRepeatGhost()       { repeatGhostFrom = -1; repeatGhostTo = -1; }
 export function setActiveNote(i)     { activeNoteIdx = i; }
 export function getActiveNote()      { return activeNoteIdx; }
 export function setPlayhead(p)       { playhead = p; }
@@ -113,17 +126,39 @@ export function getRow(y) {
 //             underflow, overflow }]
 // ══════════════════════════════════════════════════════════════
 
-// Espacio horizontal que ocupa la armadura tras la clave
+// Espacio horizontal que ocupa la armadura tras la clave. Se reserva el
+// ancho de la armadura MÁS ancha de la pieza (inicial o cualquier cambio),
+// así el inicio de cada fila muestra su tonalidad sin pisar las notas.
 function keySigPad() {
-  const ks = Math.abs(state.keySignature || 0);
-  return ks ? ks * 8 + 6 : 0;
+  let maxAbs = Math.abs(state.keySignature || 0);
+  for (const kc of (state.keyChanges || [])) maxAbs = Math.max(maxAbs, Math.abs(kc.key));
+  return maxAbs ? maxAbs * KEYSIG_STEP + 8 : 0;
 }
 
 // Cache del layout: noteAt()/insertionIndexAt() lo reutilizan entre
-// eventos de mouse en vez de recalcularlo; render() lo invalida y
-// recalcula siempre, así queda fresco para el próximo evento.
+// eventos de mouse en vez de recalcularlo. render() lo invalida SOLO
+// cuando cambió algo que afecta la geometría o el dibujo (ver
+// layoutSignature): así durante la reproducción (notas/compás/armadura
+// constantes) no se reconstruye el layout ni corre analyzeMeasures en
+// cada frame del playhead — solo se repinta.
 let _layoutCache = null;
+let _layoutSig   = null;
 export function invalidateLayout() { _layoutCache = null; }
+
+// Firma barata de TODO lo que entra en computeLayout() (duraciones,
+// compás, armadura, ancho) más la altura/accidental de cada nota, que
+// no cambian la geometría pero sí lo que dibuja el layout cacheado.
+// Si no cambió, el cache sigue siendo válido para pintar y hit-test.
+function layoutSignature() {
+  // keyChanges entra porque cambia keySigPad() (ancho reservado) y la
+  // anotación de cambio de tonalidad que se dibuja desde el layout.
+  const kc = (state.keyChanges || []).map(c => `${c.measure}:${c.key}`).join(',');
+  let s = `${W}|${state.timeSignature.num}/${state.timeSignature.den}|${state.keySignature}|${kc}|${state.notes.length}`;
+  for (const n of state.notes) {
+    s += `;${n.note}${n.accidental}${n.dur}${n.dotted ? '.' : ''}${n.triplet ? '3' : ''}${n.rest ? 'r' : ''}`;
+  }
+  return s;
+}
 
 export function buildLayout() {
   if (_layoutCache) return _layoutCache;
@@ -240,18 +275,164 @@ function drawMeasureBackgrounds(boxes, rowOffset) {
 const SHARP_SLOTS = [8, 5, 9, 6, 3, 7, 4];
 const FLAT_SLOTS  = [4, 7, 3, 6, 2, 5, 1];
 
-function drawKeySignature(r) {
-  const ks = state.keySignature || 0;
+// Paso horizontal entre glifos de una misma armadura y tamaño de fuente
+// compartidos por las 3 formas de dibujarla (inicio de fila, marca de
+// cambio a mitad de fila, fantasma de la herramienta). Antes eran 13px/8px
+// — casi ilegibles junto al resto de la notación (el accidental de una
+// nota ya usa 12px pero en el color vívido de la nota; esto quedaba muy
+// fino y en un tono apagado, así que a simple vista "no se veían").
+const KEYSIG_STEP = 11;
+const KEYSIG_FONT = 'bold 18px serif';
+
+// Dibuja los glifos de una armadura (ks) a partir de xStart en la fila pageRow.
+// `color` opcional (usado por el fantasma de la herramienta "Armadura").
+function drawKeySigGlyphs(xStart, pageRow, ks, color) {
   if (!ks) return;
   const slots = (ks > 0 ? SHARP_SLOTS : FLAT_SLOTS).slice(0, Math.abs(ks));
   const glyph = ks > 0 ? '♯' : '♭';
-  ctx.fillStyle    = cssVar('--staff-clef');
-  ctx.font         = '13px serif';
+  ctx.fillStyle    = color || cssVar('--staff-clef');
+  ctx.font         = KEYSIG_FONT;
   ctx.textAlign    = 'center';
   ctx.textBaseline = 'middle';
   slots.forEach((slot, k) => {
-    ctx.fillText(glyph, ML + 6 + k * 8, sY(r, 4) - slot * (SS / 2));
+    ctx.fillText(glyph, xStart + k * KEYSIG_STEP, sY(pageRow, 4) - slot * (SS / 2));
   });
+}
+
+// Glifos de una armadura en línea horizontal (todos a la misma altura `y`,
+// sin usar los slots del pentagrama). La usa la marca de cambio de armadura
+// a mitad de fila (8.4): ahí no hay una plana entera de pentagrama libre
+// para "montar" los glifos como en el inicio de fila, así que se dibujan
+// compactos, uno al lado del otro, en el margen superior.
+function drawKeySigGlyphsInline(xStart, y, ks, color) {
+  if (!ks) return;
+  const count = Math.abs(ks);
+  const glyph = ks > 0 ? '♯' : '♭';
+  ctx.fillStyle    = color;
+  ctx.font         = KEYSIG_FONT;
+  ctx.textAlign    = 'center';
+  ctx.textBaseline = 'middle';
+  for (let k = 0; k < count; k++) {
+    ctx.fillText(glyph, xStart + k * KEYSIG_STEP, y);
+  }
+}
+
+// Armadura efectiva al inicio de cada fila (tras la clave) + marca sobre el
+// compás donde cambia la tonalidad a mitad de pieza.
+function drawKeySignatures(boxes, rowOffset) {
+  const firstMeasureByRow = new Map();
+  for (const b of boxes) if (!firstMeasureByRow.has(b.row)) firstMeasureByRow.set(b.row, b.measureIdx);
+
+  // Armadura vigente al principio de cada fila visible
+  for (let pr = 0; pr < RPP; pr++) {
+    const absRow = pr + rowOffset;
+    let fm = firstMeasureByRow.get(absRow);
+    if (fm === undefined) { if (absRow !== 0) continue; fm = 0; }
+    drawKeySigGlyphs(ML + 6, pr, keyAt(fm));
+  }
+
+  // Marca de cambio de tonalidad: los glifos ♯/♭ completos (no una cuenta
+  // abreviada) flotando en el margen SOBRE la línea superior del pentagrama,
+  // pegados a la línea de compás donde empieza el cambio, con un tick
+  // punteado que baja hasta la barra. No reserva ancho en computeLayout
+  // (0 impacto en boxes/items ni en noteAt/insertionIndexAt) — a diferencia
+  // de la armadura de inicio de fila (que sí tiene su `keySigPad()`), esta
+  // vive por completo en el hueco entre filas para no taparse con las notas
+  // del propio compás, que empiezan justo después de `b.x0` sin ese margen.
+  const accent = cssVar('--accent') || '#5B6CFF';
+  for (const b of boxes) {
+    if (b.measureIdx === 0) continue;
+    const cur = keyAt(b.measureIdx), prev = keyAt(b.measureIdx - 1);
+    if (cur === prev) continue;
+    const pr = b.row - rowOffset;
+    if (pr < 0 || pr >= RPP) continue;
+
+    const yTop = sY(pr, 0);
+    const y    = yTop - 26;
+
+    ctx.save();
+    ctx.strokeStyle = accent;
+    ctx.globalAlpha = 0.8;
+    ctx.lineWidth   = 1.4;
+    ctx.setLineDash([2, 2]);
+    ctx.beginPath();
+    ctx.moveTo(b.x0, yTop - 2);
+    ctx.lineTo(b.x0, y + 11);
+    ctx.stroke();
+    ctx.restore();
+
+    ctx.save();
+    if (cur === 0) {
+      ctx.fillStyle    = accent;
+      ctx.font         = KEYSIG_FONT;
+      ctx.textAlign    = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('♮', b.x0 + 7, y);
+    } else {
+      drawKeySigGlyphsInline(b.x0 + 7, y, cur, accent);
+    }
+    ctx.restore();
+  }
+}
+
+// Fantasma de la herramienta "Armadura": previsualiza, antes de colocarla,
+// la armadura elegida sobre el compás bajo el cursor (mismos glifos/slots
+// que drawKeySigGlyphs, en color de acento y semitransparente).
+function drawKeyChangeGhost(boxes, rowOffset) {
+  if (keyGhostMeasure < 0) return;
+  const box = boxes.find(b => b.measureIdx === keyGhostMeasure);
+  if (!box) return;
+  const pageRow = box.row - rowOffset;
+  if (pageRow < 0 || pageRow >= RPP) return;
+
+  const accent = cssVar('--accent') || '#5B6CFF';
+
+  ctx.save();
+  ctx.globalAlpha = 0.85;
+  ctx.strokeStyle = accent;
+  ctx.lineWidth   = 1.4;
+  ctx.setLineDash([3, 3]);
+  ctx.strokeRect(box.x0, sY(pageRow, 0) - 6, box.w, SS * 4 + 12);
+  ctx.restore();
+
+  ctx.save();
+  ctx.globalAlpha = 0.55;
+  if (keyGhostKey) {
+    drawKeySigGlyphs(box.x0 + 8, pageRow, keyGhostKey, accent);
+  } else {
+    // Do M (sin alteraciones): drawKeySigGlyphs no dibuja nada; ♮ como aviso.
+    ctx.fillStyle    = accent;
+    ctx.font         = KEYSIG_FONT;
+    ctx.textAlign    = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('♮', box.x0 + 8, sY(pageRow, 4));
+  }
+  ctx.restore();
+}
+
+// Fantasma de "elegir en la partitura" para repeticiones: resalta el
+// compás bajo el cursor (o el rango completo desde el primer clic hasta
+// el compás bajo el cursor) con el mismo recuadro punteado de acento que
+// usa la herramienta "Armadura" — misma sensación en ambas herramientas.
+function drawRepeatGhost(boxes, rowOffset) {
+  if (repeatGhostFrom < 0) return;
+  const to = repeatGhostTo < 0 ? repeatGhostFrom : repeatGhostTo;
+  const lo = Math.min(repeatGhostFrom, to), hi = Math.max(repeatGhostFrom, to);
+
+  const accent = cssVar('--accent') || '#5B6CFF';
+  ctx.save();
+  ctx.globalAlpha = 0.85;
+  ctx.strokeStyle = accent;
+  ctx.lineWidth   = 1.4;
+  ctx.setLineDash([3, 3]);
+  for (let mi = lo; mi <= hi; mi++) {
+    const box = boxes[mi];
+    if (!box) continue;
+    const pageRow = box.row - rowOffset;
+    if (pageRow < 0 || pageRow >= RPP) continue;
+    ctx.strokeRect(box.x0, sY(pageRow, 0) - 6, box.w, SS * 4 + 12);
+  }
+  ctx.restore();
 }
 
 function drawStaff() {
@@ -285,8 +466,6 @@ function drawStaff() {
     ctx.fillText(String(state.timeSignature.num), ML - 14, sY(r, 1) + 2);
     ctx.fillText(String(state.timeSignature.den), ML - 14, sY(r, 3) + 2);
 
-    drawKeySignature(r);
-
     // Divisores de compás (rejilla fija)
     ctx.strokeStyle = cssVar('--staff-bar');
     ctx.lineWidth   = 0.8;
@@ -317,7 +496,7 @@ function drawEmptyHint() {
   ctx.font         = `500 14px ${cssVar('--font-sans') || 'sans-serif'}`;
   ctx.textAlign    = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillText('Hacé clic para agregar tu primera nota, o probá el botón ✨ Demo', W / 2, H / 2, W - 40);
+  ctx.fillText('Hacé clic en el pentagrama para agregar tu primera nota  ·  o cargá el ejemplo con el botón ✨ de la barra', W / 2, H / 2, W - 40);
 }
 
 // ── Dibuja una nota (o silencio) ──────────────────────────────
@@ -813,22 +992,36 @@ export function insertionIndexAt(cx, cy) {
   return insertionIndexFromLayout(items, cx, cy, state.currentPage * RPP);
 }
 
-// ── Hit-test: qué compás está en (cx, cy) — para elegir repeticiones ──
+// ── Hit-test: qué compás está en (cx, cy) — para elegir repeticiones y
+// para la herramienta "Armadura" ───────────────────────────────
 export function measureAt(cx, cy) {
   const row = getRow(cy);
   if (row < 0) return -1;
   const absRow = row + state.currentPage * RPP;
   const { boxes } = buildLayout();
-  for (const b of boxes) {
-    if (b.row === absRow && cx >= b.x0 && cx <= b.x0 + b.w) return b.measureIdx;
+  const rowBoxes = boxes.filter(b => b.row === absRow);
+  if (!rowBoxes.length) return -1; // fila sin compases (más allá del final de la pieza)
+  for (const b of rowBoxes) {
+    if (cx >= b.x0 && cx <= b.x0 + b.w) return b.measureIdx;
   }
-  return -1;
+  // cx cae en el margen sobrante de la fila (a la izquierda del primer
+  // compás o a la derecha del último, p. ej. la última fila de la pieza
+  // no llega a llenar todo el ancho): se toma el compás más cercano en
+  // vez de devolver "nada" — el clic sigue siendo válido, cayó dentro de
+  // una fila con contenido real, solo que en el hueco sobrante.
+  return cx < rowBoxes[0].x0
+    ? rowBoxes[0].measureIdx
+    : rowBoxes[rowBoxes.length - 1].measureIdx;
 }
 
 // ── Render principal ──────────────────────────────────────────
 export function render() {
   calcCanvas();
-  invalidateLayout(); // el repintado siempre parte de un layout fresco
+  // Reconstruir el layout solo si cambió algo que lo afecta; durante la
+  // reproducción la firma es constante y se reutiliza el cache (sin
+  // analyzeMeasures por frame). W entra en la firma → cubre el resize.
+  const sig = layoutSignature();
+  if (sig !== _layoutSig) { invalidateLayout(); _layoutSig = sig; }
   ctx.clearRect(0, 0, W, H);
 
   ctx.fillStyle = cssVar('--bg-score');
@@ -847,8 +1040,11 @@ export function render() {
 
   drawMeasureBackgrounds(boxes, rowOffset);
   drawStaff();
+  drawKeySignatures(boxes, rowOffset);
+  drawKeyChangeGhost(boxes, rowOffset);
   drawEmptyHint();
   drawRepeatSigns(boxes, rowOffset);
+  drawRepeatGhost(boxes, rowOffset);
 
   const selSet = new Set(state.selection);
   if (state.selectedNote >= 0) selSet.add(state.selectedNote);

@@ -2,7 +2,7 @@
    codegen/common.js — Utilidades compartidas por las plantillas
    ============================================================ */
 
-import { resolvePitch, computeTieChains } from '../music.js';
+import { resolvePitch, computeTieChains, keyAt } from '../music.js';
 
 // Marcadores invisibles para sincronizar nota ↔ línea de código
 // en el panel (se eliminan antes de copiar/exportar).
@@ -23,10 +23,12 @@ export function durExpr(n) {
 // ── Una nota → línea(s) de código C ───────────────────────────
 // durOverride: duración combinada de una cadena de ligadura.
 // legato: omite el silencio de articulación hacia la siguiente.
-export function noteToCode(n, indent, { durOverride = null, legato = false } = {}) {
+// ks: armadura efectiva del compás de la nota (para la enarmonía correcta
+// cuando la pieza cambia de tonalidad a mitad). Omitido → armadura inicial.
+export function noteToCode(n, indent, { durOverride = null, legato = false, ks } = {}) {
   if (n.rest) return `${indent}SILENCIO(${durExpr(n)});`;
 
-  const { enumName, octave } = resolvePitch(n.note, n.accidental);
+  const { enumName, octave } = resolvePitch(n.note, n.accidental, ks);
   const offStr = octave === 0 ? '0' : octave > 0 ? `+${octave}` : String(octave);
   const dur    = durOverride || durExpr(n);
 
@@ -42,12 +44,21 @@ export function noteToCode(n, indent, { durOverride = null, legato = false } = {
 export function buildLoopBody(notes, measures, { markers = false, indent = '\t\t', repeats = [] } = {}) {
   if (!measures.length) return `${indent}// Agrega notas en el pentagrama...`;
 
+  // Armadura efectiva por nota (para la enarmonía cuando la tonalidad
+  // cambia a mitad de la pieza) — un compás = una armadura.
+  const keyMap = new Array(notes.length);
+  for (let mi = 0; mi < measures.length; mi++) {
+    const k = keyAt(mi);
+    for (let i = measures[mi].startIdx; i < measures[mi].endIdx; i++) keyMap[i] = k;
+  }
+
   // Ligaduras: las notas absorbidas por una cadena no se emiten;
   // la cabeza suena con la duración sumada.
-  const { chains, consumed, legato } = computeTieChains(notes);
+  const { chains, consumed, legato } = computeTieChains(notes, idx => keyMap[idx]);
 
   const measureBlock = (mi, ind) => {
-    const m = measures[mi];
+    const m  = measures[mi];
+    const ks = keyAt(mi);
     const lines = [];
     for (let i = m.startIdx; i < m.endIdx; i++) {
       if (consumed.has(i)) continue;
@@ -56,7 +67,7 @@ export function buildLoopBody(notes, measures, { markers = false, indent = '\t\t
         ? `(${members.map(k => durExpr(notes[k])).join(' + ')})`
         : null;
       const tail = members ? members[members.length - 1] : i;
-      let code = noteToCode(notes[i], ind, { durOverride, legato: legato.has(tail) });
+      let code = noteToCode(notes[i], ind, { durOverride, legato: legato.has(tail), ks });
       if (markers) code = `${MARK_OPEN}${i}${MARK_SEP}${code}${MARK_CLOSE}`;
       lines.push(code);
     }

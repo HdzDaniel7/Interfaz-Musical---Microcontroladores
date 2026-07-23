@@ -48,32 +48,11 @@
         <button class="acc-btn"        id="acc-sharp"   data-acc="sharp"   aria-pressed="false" title="Sostenido">♯</button>
         <button class="acc-btn"        id="acc-flat"    data-acc="flat"    aria-pressed="false" title="Bemol">♭</button>
       </div>
-      <div class="divider"></div>
 
-      <input class="project-title" id="title-input" type="text"
-             value="Mi_Cancion" placeholder="Título del proyecto"
-             title="Nombre del proyecto">
-      <div class="divider"></div>
-
-      <label class="field-group" title="Octava base (z2)">
-        <span class="field-label">z2</span>
-        <input class="num-input sel-input" type="number" id="z2-val" value="5" min="3" max="8">
-      </label>
-
-      <label class="field-group" title="Compás">
-        <span class="field-label">Compás</span>
-        <select class="sel-input" id="time-sig-sel">
-          <option value="2/4">2/4</option>
-          <option value="3/4">3/4</option>
-          <option value="4/4" selected>4/4</option>
-          <option value="6/8">6/8</option>
-        </select>
-      </label>
-
-      <label class="field-group" title="Armadura de tonalidad">
-        <span class="field-label">Tono</span>
-        <select class="sel-input" id="key-sig-sel">
-          <option value="0" selected>Do M</option>
+      <div class="tool-group" role="group" aria-label="Armadura">
+        <span class="group-label">Armad.</span>
+        <select class="sel-input" id="key-tool-sel" title="Armadura a colocar">
+          <option value="0">Do M</option>
           <option value="1">Sol M · 1♯</option>
           <option value="2">Re M · 2♯</option>
           <option value="3">La M · 3♯</option>
@@ -83,17 +62,69 @@
           <option value="-3">Mi♭ M · 3♭</option>
           <option value="-4">La♭ M · 4♭</option>
         </select>
-      </label>
+        <button class="tool-btn" id="btn-key-pick" aria-pressed="false"
+                title="Colocar armadura: clic en el compás (2 o posterior) donde empieza a regir">
+          <span class="sym">🎼</span><span class="lbl">Coloc</span>
+        </button>
+      </div>
+      <div class="divider"></div>
 
-      <label class="field-group" title="Tempo en pulsos por minuto">
-        <span class="field-label">BPM</span>
-        <input class="num-input" type="number" id="bpm" value="120" min="40" max="300">
-      </label>
+      <div class="settings-wrap">
+        <button class="icon-btn" id="btn-settings" title="Ajustes del proyecto"
+                aria-haspopup="true" aria-expanded="false" aria-label="Ajustes del proyecto">
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        </button>
 
-      <label class="field-group" title="Microcontrolador de destino">
-        <span class="field-label">MCU</span>
-        <select class="sel-input" id="mcu-sel"></select>
-      </label>
+        <div class="settings-popover" id="settings-popover" hidden>
+          <div class="settings-popover-title">⚙ Ajustes del proyecto</div>
+
+          <label class="field-group" title="Nombre del proyecto">
+            <span class="field-label">Título</span>
+            <input class="project-title" id="title-input" type="text"
+                   value="Mi_Cancion" placeholder="Título del proyecto">
+          </label>
+
+          <label class="field-group" title="Octava base (z2)">
+            <span class="field-label">z2</span>
+            <input class="num-input sel-input" type="number" id="z2-val" value="5" min="3" max="8">
+          </label>
+
+          <label class="field-group" title="Compás">
+            <span class="field-label">Compás</span>
+            <select class="sel-input" id="time-sig-sel">
+              <option value="2/4">2/4</option>
+              <option value="3/4">3/4</option>
+              <option value="4/4" selected>4/4</option>
+              <option value="6/8">6/8</option>
+            </select>
+          </label>
+
+          <label class="field-group" title="Armadura inicial (compás 1)">
+            <span class="field-label">Armadura</span>
+            <select class="sel-input" id="key-sig-sel">
+              <option value="0" selected>Do M</option>
+              <option value="1">Sol M · 1♯</option>
+              <option value="2">Re M · 2♯</option>
+              <option value="3">La M · 3♯</option>
+              <option value="4">Mi M · 4♯</option>
+              <option value="-1">Fa M · 1♭</option>
+              <option value="-2">Si♭ M · 2♭</option>
+              <option value="-3">Mi♭ M · 3♭</option>
+              <option value="-4">La♭ M · 4♭</option>
+            </select>
+          </label>
+
+          <label class="field-group" title="Tempo en pulsos por minuto">
+            <span class="field-label">BPM</span>
+            <input class="num-input" type="number" id="bpm" value="120" min="40" max="300">
+          </label>
+
+          <label class="field-group" title="Microcontrolador de destino">
+            <span class="field-label">MCU</span>
+            <select class="sel-input" id="mcu-sel"></select>
+          </label>
+        </div>
+      </div>
     </div>
 
     <!-- Fila 2: acciones -->
@@ -112,6 +143,9 @@
       </button>
       <button class="icon-btn" id="btn-triplet" title="Atresillar selección (T): 3 notas en el tiempo de 2" aria-label="Atresillar selección">
         <svg viewBox="0 0 24 24"><circle cx="4" cy="18" r="2.2" fill="currentColor" stroke="none"/><circle cx="12" cy="18" r="2.2" fill="currentColor" stroke="none"/><circle cx="20" cy="18" r="2.2" fill="currentColor" stroke="none"/><path d="M2 10V7h8M14 10V7h8"/><text x="12" y="10" font-size="10" font-weight="700" fill="currentColor" stroke="none" text-anchor="middle">3</text></svg>
+      </button>
+      <button class="icon-btn" id="btn-repeat-toggle" title="Repeticiones (panel flotante)" aria-label="Repeticiones" aria-pressed="false">
+        <svg viewBox="0 0 24 24"><path d="M17 2l4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><path d="M7 22l-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
       </button>
       <div class="divider"></div>
 
@@ -226,6 +260,33 @@
         <span class="page-label" id="zoom-ind">100%</span>
         <button class="icon-btn" id="btn-zoom-in" title="Acercar (Ctrl+rueda)" aria-label="Acercar">+</button>
       </div>
+
+      <!-- Panel flotante de repeticiones (acoplado al pie del pentagrama) -->
+      <div class="repeat-panel" id="repeat-panel" hidden>
+        <div class="repeat-panel-head" id="repeat-panel-head">
+          <span class="repeat-panel-title">🔁 Repeticiones</span>
+          <div class="repeat-panel-tools">
+            <button class="repeat-panel-btn" id="btn-repeat-pin" title="Fijar el panel (se reabre al recargar)" aria-pressed="true" aria-label="Fijar">📌</button>
+            <button class="repeat-panel-btn" id="btn-repeat-dock" title="Volver al pie del pentagrama" aria-label="Acoplar al pie">⤓</button>
+            <button class="repeat-panel-btn" id="btn-repeat-close" title="Cerrar" aria-label="Cerrar">✕</button>
+          </div>
+        </div>
+        <button class="copy-btn rp-pick" id="btn-repeat-pick" aria-pressed="false"
+                title="Elegir el compás inicial y final haciendo clic en la partitura">
+          🖱 Elegir en la partitura
+        </button>
+        <div class="repeat-form">
+          <span class="field-label">C.</span>
+          <input class="num-input rep-input" type="number" id="rep-from" min="1" value="1" title="Desde compás">
+          <span class="field-label">a</span>
+          <input class="num-input rep-input" type="number" id="rep-to" min="1" value="2" title="Hasta compás">
+          <span class="field-label">×</span>
+          <input class="num-input rep-input" type="number" id="rep-times" min="2" max="16" value="2" title="Veces">
+          <button class="copy-btn" id="rep-add">Agregar</button>
+        </div>
+        <div id="rep-list" class="repeat-list"></div>
+        <p class="note-small">Cada repetición se genera como un bucle <code>for</code> en el firmware (ahorra memoria flash).</p>
+      </div>
     </div>
 
     <div class="sidebar-resizer" id="sidebar-resizer" title="Arrastrar para redimensionar"></div>
@@ -266,6 +327,32 @@
         <div class="props-tab">
 
           <section class="prop-section">
+            <h3 class="section-title">Tonalidad por compás</h3>
+            <p class="note-small" style="margin-bottom:8px">
+              La armadura del <strong>compás 1</strong> se elige con «Armadura» en la barra superior.
+              Acá podés cambiarla desde cualquier compás (los siguientes heredan la nueva
+              tonalidad hasta el próximo cambio), o con la herramienta 🎼 sobre la partitura.
+            </p>
+            <div class="repeat-form">
+              <span class="field-label">Compás</span>
+              <input class="num-input rep-input" type="number" id="key-change-measure" min="2" value="2" title="Desde qué compás aplica">
+              <select class="sel-input" id="key-change-key" title="Nueva armadura">
+                <option value="0">Do M</option>
+                <option value="1">Sol M · 1♯</option>
+                <option value="2">Re M · 2♯</option>
+                <option value="3">La M · 3♯</option>
+                <option value="4">Mi M · 4♯</option>
+                <option value="-1">Fa M · 1♭</option>
+                <option value="-2">Si♭ M · 2♭</option>
+                <option value="-3">Mi♭ M · 3♭</option>
+                <option value="-4">La♭ M · 4♭</option>
+              </select>
+              <button class="copy-btn" id="key-change-add">Agregar</button>
+            </div>
+            <div id="key-change-list" class="repeat-list"></div>
+          </section>
+
+          <section class="prop-section">
             <h3 class="section-title">Partitura</h3>
             <div class="prop-row"><span class="prop-label">Notas totales</span><span class="prop-value" id="prop-notes">0</span></div>
             <div class="prop-row"><span class="prop-label">Compases</span><span class="prop-value" id="prop-measures">0</span></div>
@@ -274,21 +361,11 @@
 
           <section class="prop-section">
             <h3 class="section-title">Repeticiones</h3>
-            <button class="copy-btn" id="btn-repeat-pick" aria-pressed="false"
-                    title="Elegir el compás inicial y final haciendo clic en la partitura">
-              🖱 Elegir en la partitura
-            </button>
-            <div class="repeat-form">
-              <span class="field-label">C.</span>
-              <input class="num-input rep-input" type="number" id="rep-from" min="1" value="1" title="Desde compás">
-              <span class="field-label">a</span>
-              <input class="num-input rep-input" type="number" id="rep-to" min="1" value="2" title="Hasta compás">
-              <span class="field-label">×</span>
-              <input class="num-input rep-input" type="number" id="rep-times" min="2" max="16" value="2" title="Veces">
-              <button class="copy-btn" id="rep-add">Agregar</button>
-            </div>
-            <div id="rep-list" class="repeat-list"></div>
-            <p class="note-small">Cada repetición se genera como un bucle <code>for</code> en el firmware (ahorra memoria flash).</p>
+            <p class="note-small">
+              Las repeticiones ahora viven en un panel flotante sobre la partitura
+              (botón <strong>🔁 Repeticiones</strong> en la barra). Se puede arrastrar,
+              fijar al pie del pentagrama o cerrar.
+            </p>
           </section>
 
           <section class="prop-section">

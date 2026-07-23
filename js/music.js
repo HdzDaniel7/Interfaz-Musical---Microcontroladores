@@ -31,6 +31,29 @@ export function keyAdjust(base, ks = state.keySignature) {
   return FLAT_ORDER.slice(0, -ks).includes(base) ? -1 : 0;
 }
 
+// ── Armadura efectiva de un compás ────────────────────────────
+// keySignature es la armadura inicial (compás 0); cada entrada de
+// keyChanges [{measure, key}] la sustituye desde ese compás en adelante.
+export function keyAt(measureIdx) {
+  let k = state.keySignature || 0, bestM = -1;
+  for (const kc of (state.keyChanges || [])) {
+    if (kc.measure <= measureIdx && kc.measure > bestM) { bestM = kc.measure; k = kc.key; }
+  }
+  return k;
+}
+
+// Mapa índice-de-nota → armadura efectiva, a partir de los compases ya
+// analizados. Lo usan el codegen y buildSchedule para resolver cada
+// altura con la armadura vigente en su compás.
+export function buildNoteKeyMap(measures) {
+  const map = new Array(state.notes.length).fill(state.keySignature || 0);
+  for (let mi = 0; mi < measures.length; mi++) {
+    const k = keyAt(mi);
+    for (let i = measures[mi].startIdx; i < measures[mi].endIdx; i++) map[i] = k;
+  }
+  return map;
+}
+
 // ── Resolución de altura ──────────────────────────────────────
 // Convierte nota + accidental a { enumName, pc, octave } trabajando
 // en semitonos absolutos. Así los enarmónicos salen siempre bien:
@@ -53,8 +76,8 @@ export function resolvePitch(noteName, accidental, ks = state.keySignature) {
 
 // ── Frecuencia para Web Audio API ─────────────────────────────
 // Equivalente a getFreq() del firmware: DO0 = 16.3516 Hz.
-export function noteFreq(noteName, accidental, z2) {
-  const { pc, octave } = resolvePitch(noteName, accidental);
+export function noteFreq(noteName, accidental, z2, ks = state.keySignature) {
+  const { pc, octave } = resolvePitch(noteName, accidental, ks);
   return DO0_FREQ * Math.pow(2, ((z2 + octave) * 12 + pc) / 12);
 }
 
@@ -159,7 +182,10 @@ export function fitsInCurrentMeasure(dur, dotted, triplet = false) {
 //  · distinta altura → legato: sin silencio de articulación
 // ══════════════════════════════════════════════════════════════
 
-export function computeTieChains(notes = state.notes) {
+// keyOf(idx) → armadura efectiva de la nota idx (para comparar alturas
+// enarmónicas entre compases con distinta tonalidad). Por defecto, la
+// armadura inicial (piezas de una sola tonalidad no cambian de resultado).
+export function computeTieChains(notes = state.notes, keyOf = () => state.keySignature) {
   const chains   = new Map(); // índice cabeza → [cabeza, ...miembros]
   const consumed = new Set(); // miembros absorbidos por una cadena
   const legato   = new Set(); // índices cuya transición siguiente es legato
@@ -168,8 +194,8 @@ export function computeTieChains(notes = state.notes) {
     const members = [i];
     let j = i;
     while (notes[j].tieToNext && notes[j + 1] && !notes[j + 1].rest) {
-      const a = resolvePitch(notes[j].note, notes[j].accidental);
-      const b = resolvePitch(notes[j + 1].note, notes[j + 1].accidental);
+      const a = resolvePitch(notes[j].note, notes[j].accidental, keyOf(j));
+      const b = resolvePitch(notes[j + 1].note, notes[j + 1].accidental, keyOf(j + 1));
       if (a.enumName === b.enumName && a.octave === b.octave) {
         consumed.add(j + 1);
         members.push(j + 1);
@@ -238,9 +264,11 @@ export function expandedNoteIndices() {
 // La consumen audio.js (Web Audio) y serial.js (ESP32 por USB), así
 // ambos tocan exactamente la misma secuencia.
 export function buildSchedule(fromIdx = 0) {
+  const measures = analyzeMeasures();
+  const keyMap   = buildNoteKeyMap(measures);   // armadura efectiva por nota
   const order    = expandedNoteIndices();
   const startPos = fromIdx > 0 ? Math.max(0, order.indexOf(fromIdx)) : 0;
-  const { chains, consumed, legato } = computeTieChains();
+  const { chains, consumed, legato } = computeTieChains(state.notes, idx => keyMap[idx]);
 
   const events = [];
   for (const idx of order.slice(startPos)) {
@@ -251,7 +279,7 @@ export function buildSchedule(fromIdx = 0) {
     events.push({
       idx,
       rest:     !!n.rest,
-      freq:     n.rest ? 0 : noteFreq(n.note, n.accidental, state.z2),
+      freq:     n.rest ? 0 : noteFreq(n.note, n.accidental, state.z2, keyMap[idx]),
       durBeats,
       legato:   legato.has(members[members.length - 1]),
     });
