@@ -19,7 +19,10 @@ import {
   setActiveNote, getZoom, setZoom, setKeyChangeGhost, clearKeyChangeGhost,
   setRepeatGhost, clearRepeatGhost,
 } from './renderer.js';
-import { playScore, stopScore, setVolume, previewNote, isPlaying } from './audio.js';
+import {
+  playScore, stopScore, setVolume, previewNote, isPlaying,
+  setMetronomeEnabled,
+} from './audio.js';
 import {
   isSerialSupported, isSerialConnected, isSerialPlaying, onSerialStatus,
   serialConnect, serialDisconnect, serialPlay, serialStop,
@@ -1354,6 +1357,18 @@ function bindActions() {
 
   $('btn-play').addEventListener('click', startPlayback);
   $('btn-stop').addEventListener('click', stopAll);
+
+  // ── Metrónomo (toggle, persistido en editor-musical-ui) ──
+  const metroBtn = $('btn-metronome');
+  const metroOn  = !!uiPrefs.metronome;
+  setMetronomeEnabled(metroOn);
+  metroBtn.setAttribute('aria-pressed', String(metroOn));
+  metroBtn.addEventListener('click', () => {
+    const on = metroBtn.getAttribute('aria-pressed') !== 'true';
+    setMetronomeEnabled(on);
+    metroBtn.setAttribute('aria-pressed', String(on));
+    saveUIPrefs({ metronome: on });
+  });
 
   // ── Reproducción en vivo por USB (ESP32) ─────────────────
   bindSerial();

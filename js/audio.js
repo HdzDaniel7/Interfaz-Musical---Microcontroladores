@@ -19,10 +19,48 @@ let currentOsc    = null;
 let currentVolume = 0.07;
 let _playing      = false;
 let _rafId        = 0;
+let _metronomeOn  = false;
+let _clickOscs    = []; // osciladores del metrónomo de la reproducción actual
 
 const RAMP = 0.004; // rampa anti-click (4 ms)
 
 export function isPlaying() { return _playing; }
+
+// ── Metrónomo ──────────────────────────────────────────────────
+export function setMetronomeEnabled(v) { _metronomeOn = !!v; }
+export function isMetronomeEnabled() { return _metronomeOn; }
+
+// Click corto (~30 ms): 1000 Hz normal, 1500 Hz de acento en el beat 1.
+function scheduleClick(ctx, time, accent) {
+  const osc  = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.type            = 'sine';
+  osc.frequency.value = accent ? 1500 : 1000;
+  gain.gain.value      = 0;
+
+  osc.connect(gain);
+  gain.connect(ctx.destination);
+
+  const durMs = 30;
+  const end   = time + durMs / 1000;
+  const peak  = currentVolume * (accent ? 1.4 : 1);
+  gain.gain.setValueAtTime(0, time);
+  gain.gain.linearRampToValueAtTime(peak, time + RAMP);
+  gain.gain.setValueAtTime(peak, end - 0.006);
+  gain.gain.linearRampToValueAtTime(0, end);
+
+  osc.start(time);
+  osc.stop(end + 0.01);
+  osc.onended = () => { osc.disconnect(); gain.disconnect(); };
+  _clickOscs.push(osc);
+}
+
+function stopClicks() {
+  for (const osc of _clickOscs) {
+    try { osc.onended = null; osc.stop(); osc.disconnect(); } catch (e) { /* ya detenido */ }
+  }
+  _clickOscs = [];
+}
 
 function ensureCtx() {
   if (!audioCtx) {
@@ -137,6 +175,16 @@ export function playScore(fromIdx = 0) {
   const beatDen = Math.round(beatsPerMeasure()); // capacidad del compás (snapshot)
   let cursor = 0;
 
+  // ── Metrónomo: un click por beat, acento en el beat 1 de cada compás ──
+  _clickOscs = [];
+  if (_metronomeOn) {
+    let beatIdx = 0;
+    for (let tc = t0; tc < t - 0.001; tc += beatSec) {
+      scheduleClick(ctx, tc, beatIdx % beatDen === 0);
+      beatIdx++;
+    }
+  }
+
   const tick = () => {
     if (!_playing) return;
     const now = ctx.currentTime;
@@ -181,6 +229,7 @@ function finishPlayback() {
   _playing   = false;
   currentOsc = null;
   masterGain = null;
+  _clickOscs = [];
   setActiveNote(-1);
   setPlayhead(null);
   render();
@@ -201,5 +250,6 @@ export function stopScore() {
     }
     if (masterGain) masterGain.disconnect();
   } catch (e) { /* ya detenido */ }
+  stopClicks();
   finishPlayback();
 }
