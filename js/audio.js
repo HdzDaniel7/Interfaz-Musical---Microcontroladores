@@ -112,34 +112,15 @@ export function previewNote(noteName, accidental, durMs = 150) {
   } catch (e) { /* audio no disponible — ignorar */ }
 }
 
-// ── Reproducción de la partitura (opcionalmente desde un índice) ──
-export function playScore(fromIdx = 0) {
-  if (_playing || !state.notes.length) return;
-  if (fromIdx < 0 || fromIdx >= state.notes.length) fromIdx = 0;
-
-  const ctx     = ensureCtx();
-  const beatSec = 60 / (state.bpm || 120);
-
-  _playing = true;
-
-  const osc  = ctx.createOscillator();
-  const gain = ctx.createGain();      // articulación (envolvente por nota)
-  masterGain = ctx.createGain();      // volumen del usuario
-  currentOsc = osc;
-
-  osc.connect(gain);
-  gain.connect(masterGain);
-  masterGain.connect(ctx.destination);
-
-  osc.type              = _timbre;
-  gain.gain.value       = 0;
-  masterGain.gain.value = currentVolume;
-
-  // ── Programar todas las notas + construir agenda visual ────
-  // buildSchedule() ya expande repeticiones y resuelve ligaduras;
-  // aquí solo se traduce cada evento a la envolvente del oscilador.
+// ── Envolvente de la partitura (compartida entre reproducción real y
+// render offline para WAV): agenda frecuencia/gain de `osc`/`gain` en
+// `ctx` a partir de `fromIdx`, con `leadIn` segundos antes del primer
+// evento. buildSchedule() ya expande repeticiones y resuelve ligaduras;
+// acá solo se traduce cada evento a la envolvente del oscilador.
+function scheduleNoteEnvelope(ctx, osc, gain, fromIdx, leadIn) {
+  const beatSec  = 60 / (state.bpm || 120);
   const events   = buildSchedule(fromIdx);
-  const t0       = ctx.currentTime + 0.06;
+  const t0       = ctx.currentTime + leadIn;
   const schedule = [];
   let t = t0;
   let prevLegato = false;
@@ -174,6 +155,33 @@ export function playScore(fromIdx = 0) {
   osc.start(t0);
   osc.stop(t + 0.05);
 
+  return { t0, t, schedule };
+}
+
+// ── Reproducción de la partitura (opcionalmente desde un índice) ──
+export function playScore(fromIdx = 0) {
+  if (_playing || !state.notes.length) return;
+  if (fromIdx < 0 || fromIdx >= state.notes.length) fromIdx = 0;
+
+  const ctx = ensureCtx();
+
+  _playing = true;
+
+  const osc  = ctx.createOscillator();
+  const gain = ctx.createGain();      // articulación (envolvente por nota)
+  masterGain = ctx.createGain();      // volumen del usuario
+  currentOsc = osc;
+
+  osc.connect(gain);
+  gain.connect(masterGain);
+  masterGain.connect(ctx.destination);
+
+  osc.type              = _timbre;
+  gain.gain.value       = 0;
+  masterGain.gain.value = currentVolume;
+
+  const { t0, t, schedule } = scheduleNoteEnvelope(ctx, osc, gain, fromIdx, 0.06);
+
   // ── Playhead animado + seguimiento de página ───────────────
   const { items } = buildLayout(); // snapshot (las notas no cambian al reproducir)
   const byIdx = new Map(items.map(it => [it.noteIdx, it]));
@@ -183,6 +191,7 @@ export function playScore(fromIdx = 0) {
   // ── Metrónomo: un click por beat, acento en el beat 1 de cada compás ──
   _clickOscs = [];
   if (_metronomeOn) {
+    const beatSec = 60 / (state.bpm || 120);
     let beatIdx = 0;
     for (let tc = t0; tc < t - 0.001; tc += beatSec) {
       scheduleClick(ctx, tc, beatIdx % beatDen === 0);
@@ -257,4 +266,74 @@ export function stopScore() {
   } catch (e) { /* ya detenido */ }
   stopClicks();
   finishPlayback();
+}
+
+// ── Exportar WAV (OfflineAudioContext, sin dependencias) ──────
+// Reutiliza scheduleNoteEnvelope() con la misma partitura (repeticiones
+// expandidas, ligaduras resueltas) sobre un contexto offline, y arma a
+// mano un WAV PCM 16-bit mono a partir del AudioBuffer renderizado.
+export async function renderWavBlob(fromIdx = 0) {
+  if (!state.notes.length) throw new Error('sin notas');
+
+  const leadIn      = 0.01;
+  const beatSec     = 60 / (state.bpm || 120);
+  const totalBeats  = buildSchedule(fromIdx).reduce((s, ev) => s + ev.durBeats, 0);
+  const duration    = leadIn + totalBeats * beatSec + 0.15; // margen para la rampa final
+  const sampleRate  = 44100;
+  const offlineCtx  = new OfflineAudioContext(1, Math.max(1, Math.ceil(duration * sampleRate)), sampleRate);
+
+  const osc    = offlineCtx.createOscillator();
+  const gain   = offlineCtx.createGain();
+  const master = offlineCtx.createGain();
+  osc.connect(gain);
+  gain.connect(master);
+  master.connect(offlineCtx.destination);
+
+  osc.type         = _timbre;
+  gain.gain.value  = 0;
+  master.gain.value = currentVolume;
+
+  scheduleNoteEnvelope(offlineCtx, osc, gain, fromIdx, leadIn);
+
+  const buffer = await offlineCtx.startRendering();
+  return audioBufferToWav(buffer);
+}
+
+function audioBufferToWav(buffer) {
+  const numChannels   = buffer.numberOfChannels;
+  const sampleRate    = buffer.sampleRate;
+  const samples       = buffer.getChannelData(0);
+  const bytesPerSample = 2;
+  const blockAlign    = numChannels * bytesPerSample;
+  const dataSize      = samples.length * blockAlign;
+
+  const arrayBuffer = new ArrayBuffer(44 + dataSize);
+  const view        = new DataView(arrayBuffer);
+
+  const writeStr = (offset, str) => {
+    for (let i = 0; i < str.length; i++) view.setUint8(offset + i, str.charCodeAt(i));
+  };
+
+  writeStr(0, 'RIFF');
+  view.setUint32(4, 36 + dataSize, true);
+  writeStr(8, 'WAVE');
+  writeStr(12, 'fmt ');
+  view.setUint32(16, 16, true);            // tamaño del chunk fmt
+  view.setUint16(20, 1, true);             // formato PCM
+  view.setUint16(22, numChannels, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * blockAlign, true); // byte rate
+  view.setUint16(32, blockAlign, true);
+  view.setUint16(34, bytesPerSample * 8, true);      // bits por muestra
+  writeStr(36, 'data');
+  view.setUint32(40, dataSize, true);
+
+  let offset = 44;
+  for (let i = 0; i < samples.length; i++) {
+    const s = Math.max(-1, Math.min(1, samples[i]));
+    view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+    offset += 2;
+  }
+
+  return new Blob([arrayBuffer], { type: 'audio/wav' });
 }

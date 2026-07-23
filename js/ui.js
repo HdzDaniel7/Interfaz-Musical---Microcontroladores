@@ -21,7 +21,7 @@ import {
 } from './renderer.js';
 import {
   playScore, stopScore, setVolume, previewNote, isPlaying,
-  setMetronomeEnabled, setTimbre,
+  setMetronomeEnabled, setTimbre, renderWavBlob,
 } from './audio.js';
 import {
   isSerialSupported, isSerialConnected, isSerialPlaying, onSerialStatus,
@@ -1481,6 +1481,21 @@ function bindActions() {
       downloadBlob(blob, 'image/png', name);
       showToast(`${name} exportado`, { type: 'success' });
     }, 'image/png');
+  });
+
+  $('btn-export-wav').addEventListener('click', async () => {
+    if (!state.notes.length) {
+      showToast('No hay notas para exportar', { type: 'warn' });
+      return;
+    }
+    try {
+      const blob = await renderWavBlob(0);
+      const name = safeFileName(state.title) + '.wav';
+      downloadBlob(blob, 'audio/wav', name);
+      showToast(`${name} exportado`, { type: 'success' });
+    } catch (e) {
+      showToast('Error al exportar el WAV', { type: 'error' });
+    }
   });
 
   $('btn-copy').addEventListener('click', async () => {
