@@ -21,7 +21,7 @@ import {
 } from './renderer.js';
 import {
   playScore, stopScore, setVolume, previewNote, isPlaying,
-  setMetronomeEnabled,
+  setMetronomeEnabled, setTimbre,
 } from './audio.js';
 import {
   isSerialSupported, isSerialConnected, isSerialPlaying, onSerialStatus,
@@ -1368,6 +1368,15 @@ function bindActions() {
     setMetronomeEnabled(on);
     metroBtn.setAttribute('aria-pressed', String(on));
     saveUIPrefs({ metronome: on });
+  });
+
+  // ── Timbre (solo monitoreo en PC; persistido en editor-musical-ui) ──
+  const timbreSel = $('timbre-sel');
+  timbreSel.value = uiPrefs.timbre || 'square';
+  setTimbre(timbreSel.value);
+  timbreSel.addEventListener('change', () => {
+    setTimbre(timbreSel.value);
+    saveUIPrefs({ timbre: timbreSel.value });
   });
 
   // ── Reproducción en vivo por USB (ESP32) ─────────────────

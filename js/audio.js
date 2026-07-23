@@ -21,10 +21,15 @@ let _playing      = false;
 let _rafId        = 0;
 let _metronomeOn  = false;
 let _clickOscs    = []; // osciladores del metrónomo de la reproducción actual
+let _timbre       = 'square'; // solo monitoreo en PC — el hardware siempre es onda cuadrada
 
 const RAMP = 0.004; // rampa anti-click (4 ms)
 
 export function isPlaying() { return _playing; }
+
+// ── Timbre (solo monitoreo en PC; el hardware siempre suena cuadrado) ──
+export function setTimbre(t) { _timbre = t; }
+export function getTimbre() { return _timbre; }
 
 // ── Metrónomo ──────────────────────────────────────────────────
 export function setMetronomeEnabled(v) { _metronomeOn = !!v; }
@@ -87,7 +92,7 @@ export function previewNote(noteName, accidental, durMs = 150) {
     const osc  = ctx.createOscillator();
     const gain = ctx.createGain();
 
-    osc.type            = 'square';
+    osc.type            = _timbre;
     osc.frequency.value = noteFreq(noteName, accidental, state.z2);
     gain.gain.value     = 0;
 
@@ -126,7 +131,7 @@ export function playScore(fromIdx = 0) {
   gain.connect(masterGain);
   masterGain.connect(ctx.destination);
 
-  osc.type              = 'square';
+  osc.type              = _timbre;
   gain.gain.value       = 0;
   masterGain.gain.value = currentVolume;
 
