@@ -199,7 +199,7 @@ function updateStatus() {
     state.notes.length, state.selectedNote, state.selection.length,
     state.timeSignature.num, state.timeSignature.den, state.keySignature,
     state.keyChanges.map(k => `${k.measure}:${k.key}`).join(','),
-    state.mcu, state.repeats.length, playing,
+    state.mcu, state.repeats.length, playing, state.pickup,
     sn ? `${sn.note}|${sn.dur}|${sn.dotted}|${sn.triplet}|${sn.rest}|${sn.accidental}` : '',
   ].join('|');
   if (sig === _statusSig) return;
@@ -242,8 +242,9 @@ function updateStatus() {
 
   $('prop-notes').textContent    = count;
   $('prop-measures').textContent = measures.length;
-  $('prop-complete').textContent =
-    measures.filter(m => !m.overflow && !m.underflow).length;
+  // El compás 1 incompleto no cuenta como error si es una anacrusa (state.pickup).
+  $('prop-complete').textContent = measures.filter((m, i) =>
+    !m.overflow && (!m.underflow || (i === 0 && state.pickup))).length;
 
   const tono = $('key-sig-sel').selectedOptions[0].textContent;
   canvas.setAttribute('aria-label',
@@ -941,6 +942,13 @@ function bindToolbar() {
     state.clef = e.target.value === 'bass' ? 'bass' : 'treble';
     updateStaffRefLabels();
     render(); // no toca el código: la clave es puramente visual (audio/codegen ajenos a NOTE_SLOT)
+    scheduleSave();
+  });
+
+  $('pickup-check').addEventListener('change', e => {
+    pushHistory(); // cambia qué compás se marca "incompleto": deshacible como paso propio
+    state.pickup = e.target.checked;
+    render();
     scheduleSave();
   });
 
@@ -1801,6 +1809,8 @@ export function syncControlsFromState() {
 
   $('clef-sel').value = state.clef === 'bass' ? 'bass' : 'treble';
   updateStaffRefLabels();
+
+  $('pickup-check').checked = !!state.pickup;
 
   $('mcu-sel').value = state.mcu;
   syncExtraCodeUI();

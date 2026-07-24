@@ -272,8 +272,11 @@ function drawMeasureBackgrounds(boxes, rowOffset) {
       ctx.restore();
     }
 
-    // Compás con problema de duración
-    if (b.overflow || b.underflow) {
+    // Compás con problema de duración — salvo el compás 1 incompleto
+    // cuando es una anacrusa (state.pickup): es incompleto a propósito,
+    // no un error.
+    const isPickup = b.measureIdx === 0 && b.underflow && state.pickup;
+    if ((b.overflow || b.underflow) && !isPickup) {
       const warn = b.overflow ? (cssVar('--danger') || '#E5484D')
                               : (cssVar('--warning') || '#F5A524');
       ctx.save();

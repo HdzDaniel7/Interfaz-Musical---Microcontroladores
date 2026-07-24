@@ -21,6 +21,9 @@ export const state = {
   // de compás 0-based, ≥1; key = semitonos de armadura, −7..7). La armadura
   // efectiva de un compás es keySignature + el último cambio con measure ≤ compás.
   keyChanges:    [],
+  // Anacrusa: si es true, el compás 1 incompleto no se marca ni cuenta
+  // como error (es un compás de entrada, no un error de escritura).
+  pickup:        false,
   selectedNote:  -1,   // nota primaria (sync con el código)
   selection:     [],   // selección múltiple (incluye la primaria)
   // Selección de una repetición/cambio de armadura clickeado en la partitura
@@ -53,6 +56,7 @@ function snapshotState() {
     z2:            state.z2,
     title:         state.title,
     clef:          state.clef,
+    pickup:        state.pickup,
   };
 }
 
@@ -75,6 +79,7 @@ function applySnapshot(snap) {
   state.z2             = snap.z2;
   state.title          = snap.title;
   state.clef           = snap.clef === 'bass' ? 'bass' : 'treble';
+  state.pickup         = !!snap.pickup; // snapshots viejos no lo tenían → false
 }
 
 export function pushHistory() {
@@ -243,6 +248,7 @@ function applyProjectData(d) {
     ? Math.max(-7, Math.min(7, d.keySignature)) : 0;
   state.clef          = d.clef === 'bass' ? 'bass' : 'treble';
   state.extraCode     = sanitizeExtraCode(d.extraCode);
+  state.pickup        = !!d.pickup; // ausente en proyectos viejos → false
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -263,6 +269,7 @@ export function exportProject() {
     keyChanges:    state.keyChanges,
     extraCode:     state.extraCode,
     repeats:       state.repeats,
+    pickup:        state.pickup,
   }, null, 2);
 }
 
