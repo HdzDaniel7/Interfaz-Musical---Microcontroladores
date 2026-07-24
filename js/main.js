@@ -30,3 +30,12 @@ if (recovered) {
 // ── Arrancar UI y primer render ───────────────────────────────
 initUI();
 render();
+
+// ── Service worker (PWA instalable, cache-first del app shell) ─
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('./sw.js').catch(err =>
+      console.warn('No se pudo registrar el service worker:', err)
+    );
+  });
+}

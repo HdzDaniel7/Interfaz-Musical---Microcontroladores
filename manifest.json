@@ -1,0 +1,15 @@
+{
+  "name": "Editor Musical · Microcontroladores",
+  "short_name": "Editor Musical",
+  "description": "Editor de partitura interactivo que exporta firmware para ESP32, Arduino UNO y ATmega328P",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#ECEEF6",
+  "theme_color": "#5B6CFF",
+  "lang": "es",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}
