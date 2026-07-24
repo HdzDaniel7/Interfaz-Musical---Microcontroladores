@@ -24,6 +24,13 @@
  * PROTOCOLO (115200 baud, líneas terminadas en '\n')
  *   PC → MCU:   H · T<freq>,<ms> · S<ms> · X
  *   MCU → PC:   B (boot) · OK (handshake) · D (figura terminada)
+ *
+ * La PC puede mandar la figura N+1 mientras N todavía suena (pipeline
+ * de 1 evento): la recepción es por interrupción (buffer circular,
+ * ver rx_buf más abajo) para no perder bytes mientras sostener() solo
+ * revisa el USART cada CHECK_MS — sin esa interrupción, cada byte que
+ * no fuera 'X' se leía y se tiraba, así que la figura adelantada se
+ * perdía en silencio.
  * ============================================================
  */
 
@@ -42,16 +49,42 @@
 /* ================= UART (USART0, 8N1, doble velocidad) ====== */
 #define UBRR_VAL (F_CPU / 8UL / BAUD - 1)
 
+/* Buffer circular de recepción, llenado por interrupción (USART_RX_vect).
+ * Antes se leía UDR0 por polling dentro de sostener(): un byte que no
+ * fuera 'X' se leía y se descartaba sin guardarlo, así que una figura
+ * adelantada por la PC (pipeline de 1 evento, H1) se perdía en silencio.
+ * Con el buffer, esos bytes quedan en cola y la línea de comando se
+ * arma completa apenas termina la figura en curso. 32 bytes alcanzan
+ * de sobra para una línea "T65535,65535\n" (13 bytes).
+ */
+#define RX_BUF_SIZE 32
+static volatile char    rx_buf[RX_BUF_SIZE];
+static volatile uint8_t rx_head = 0, rx_tail = 0;
+
+ISR(USART_RX_vect) {
+  uint8_t c = UDR0;
+  uint8_t next = (uint8_t)((rx_head + 1) % RX_BUF_SIZE);
+  if (next != rx_tail) {           /* si está lleno, se descarta (no debería pasar) */
+    rx_buf[rx_head] = c;
+    rx_head = next;
+  }
+}
+
 void uart_init(void) {
   UBRR0H = (uint8_t)(UBRR_VAL >> 8);
   UBRR0L = (uint8_t)(UBRR_VAL);
   UCSR0A = (1 << U2X0);                       /* doble velocidad → menor error */
-  UCSR0B = (1 << RXEN0) | (1 << TXEN0);
+  UCSR0B = (1 << RXEN0) | (1 << TXEN0) | (1 << RXCIE0);
   UCSR0C = (1 << UCSZ01) | (1 << UCSZ00);     /* 8 bits, sin paridad, 1 stop */
 }
 
-static inline uint8_t uart_available(void) { return (UCSR0A & (1 << RXC0)) != 0; }
-static inline uint8_t uart_read(void)      { while (!(UCSR0A & (1 << RXC0))) {} return UDR0; }
+static inline uint8_t uart_available(void) { return rx_head != rx_tail; }
+static uint8_t uart_read(void) {
+  while (rx_head == rx_tail) {}               /* espera si todavía no llegó nada */
+  uint8_t c = (uint8_t) rx_buf[rx_tail];
+  rx_tail = (uint8_t)((rx_tail + 1) % RX_BUF_SIZE);
+  return c;
+}
 static void uart_write(char c)             { while (!(UCSR0A & (1 << UDRE0))) {} UDR0 = c; }
 static void uart_print(const char *s)      { while (*s) uart_write(*s++); }
 
@@ -101,7 +134,11 @@ uint8_t sostener(uint16_t freq, uint16_t ms) {
   set_pwm_frequency(freq);
   uint32_t inicio = millis();
   while ((millis() - inicio) < (uint32_t)ms) {
-    if (uart_available() && uart_read() == 'X') {
+    if (uart_available() && rx_buf[rx_tail] == 'X') {  /* peek: no lo saca de la cola */
+      uart_read();                                      /* ahora sí, consume la 'X' */
+      /* Descarta cualquier figura que la PC ya haya adelantado (pipeline
+       * de 1 evento, H1): un paro es total, no debe sonar la siguiente. */
+      while (uart_available()) uart_read();
       set_pwm_frequency(0);
       return 0;
     }

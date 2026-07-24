@@ -16,6 +16,11 @@
  * PROTOCOLO (115200 baud, líneas terminadas en '\n')
  *   PC → UNO:   H · T<freq>,<ms> · S<ms> · X
  *   UNO → PC:   B (boot) · OK (handshake) · D (figura terminada)
+ *
+ * La PC puede mandar la figura N+1 mientras N todavía suena (pipeline
+ * de 1 evento): como sostener() solo consume bytes cuando son 'X', el
+ * resto queda intacto en el buffer de Serial y se procesa apenas
+ * termina la figura actual, sin otra ida y vuelta USB.
  * ============================================================
  */
 
@@ -44,6 +49,9 @@ bool sostener(uint16_t freq, uint32_t ms) {
   while (millis() - inicio < ms) {
     if (Serial.available() && Serial.peek() == 'X') {
       Serial.read();                 // consume la 'X'
+      // Descarta cualquier figura que la PC ya haya adelantado (pipeline
+      // de 1 evento, H1): un paro es total, no debe sonar la siguiente.
+      while (Serial.available()) Serial.read();
       noTone(BUZZER_PIN);
       return false;                  // abortada → no se manda "D"
     }

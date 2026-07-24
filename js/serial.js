@@ -132,23 +132,37 @@ function waitAck(timeoutMs) {
 // ── Reproducción en vivo ──────────────────────────────────────
 // Recorre la misma agenda que Web Audio y la envía figura a figura.
 // onNote(idx) permite a la UI animar la nota activa (-1 al terminar).
+//
+// H1 (pipeline de 1 evento): la figura N+1 se manda de inmediato,
+// SIN esperar el 'D' de la figura N — así, cuando el firmware termina
+// de sonar N, la N+1 ya está en su buffer de entrada lista para tocar
+// sin pagar otra ida y vuelta USB (el firmware ya la deja en cola en
+// vez de descartarla). El orden de los 'D' sigue siendo 1:1 con el
+// orden de envío, así que waitAck() (FIFO) no necesita cambios.
 export async function serialPlay(fromIdx = 0, { onNote = null } = {}) {
   if (!connected || serialPlaying) return;
 
   const events  = buildSchedule(fromIdx);
+  if (!events.length) return;
   const beatSec = 60 / (state.bpm || 120);
+
+  const cmds = events.map(ev => {
+    const ms = Math.max(1, Math.round(ev.durBeats * beatSec * 1000));
+    return { ms, str: ev.rest ? `S${ms}\n` : `T${Math.round(ev.freq)},${ms}\n` };
+  });
 
   serialPlaying = true;
   stopFlag      = false;
   notify();
 
-  for (const ev of events) {
-    if (stopFlag) break;
-    const ms = Math.max(1, Math.round(ev.durBeats * beatSec * 1000));
+  if (onNote) onNote(events[0].idx);
+  await send(cmds[0].str);
 
-    if (onNote) onNote(ev.idx);
-    await send(ev.rest ? `S${ms}\n` : `T${Math.round(ev.freq)},${ms}\n`);
-    await waitAck(ms + 500);          // espera el 'D' (o sigue tras el timeout)
+  for (let i = 0; i < events.length && !stopFlag; i++) {
+    if (i + 1 < events.length) await send(cmds[i + 1].str); // adelanta la siguiente
+    await waitAck(cmds[i].ms + 500);   // espera el 'D' de la actual (o el timeout)
+    if (stopFlag) break;
+    if (i + 1 < events.length && onNote) onNote(events[i + 1].idx);
   }
 
   serialPlaying = false;

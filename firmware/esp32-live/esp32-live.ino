@@ -26,6 +26,11 @@
  *     B    boot: el firmware arrancó y está listo
  *     OK   respuesta al handshake
  *     D    done: la figura terminó, listo para la siguiente
+ *
+ * La PC puede mandar la figura N+1 mientras N todavía suena (pipeline
+ * de 1 evento): como sostener() solo consume bytes cuando son 'X', el
+ * resto queda intacto en el buffer de Serial y se procesa apenas
+ * termina la figura actual, sin otra ida y vuelta USB.
  * ============================================================
  */
 
@@ -55,6 +60,9 @@ bool sostener(uint16_t freq, uint32_t ms) {
   while (millis() - inicio < ms) {
     if (Serial.available() && Serial.peek() == 'X') {
       Serial.read();                 // consume la 'X'
+      // Descarta cualquier figura que la PC ya haya adelantado (pipeline
+      // de 1 evento, H1): un paro es total, no debe sonar la siguiente.
+      while (Serial.available()) Serial.read();
       ledcWriteTone(BUZZER_PIN, 0);
       return false;                  // abortada → no se manda "D"
     }
