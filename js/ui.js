@@ -12,6 +12,7 @@ import {
 } from './constants.js';
 import {
   analyzeMeasures, availableDurations, fitsAtIndex, sanitizedRepeats, keyAt,
+  buildNoteKeyMap, transposeNote,
 } from './music.js';
 import {
   canvas, render, requestRender, setCursor, clearCursor,
@@ -510,6 +511,24 @@ function transposeSelected(delta) {
   }
   if (preview) previewNote(preview.note, preview.accidental);
   afterNotesChanged();
+}
+
+// Transponer TODA la pieza `semitones` (+/-), reescribiendo nota +
+// accidental de cada figura (no silencios) contra la armadura vigente
+// en su propio compás — la armadura en sí no cambia.
+function transposeGlobal(semitones) {
+  if (!semitones || !state.notes.length) return;
+  pushHistory();
+  const keyMap = buildNoteKeyMap(analyzeMeasures());
+  for (let i = 0; i < state.notes.length; i++) {
+    const n = state.notes[i];
+    if (n.rest) continue;
+    const { note, accidental } = transposeNote(n.note, n.accidental, semitones, keyMap[i]);
+    state.notes[i] = { ...n, note, accidental };
+  }
+  afterNotesChanged();
+  const sign = semitones > 0 ? '+' : '';
+  showToast(`Pieza transportada ${sign}${semitones} semitono${Math.abs(semitones) === 1 ? '' : 's'}`, { type: 'success' });
 }
 
 // Destino de reproducción: 'pc' (Web Audio) · 'hw' (USB) · 'both'
@@ -1248,6 +1267,73 @@ function bindRepeatPicker() {
   });
 }
 
+// ── Mini-popover de transposición global (semitonos), anclado al
+// botón que lo abre — mismo patrón que el popover de repeticiones,
+// pero sin depender de un clic en el canvas.
+let _transposePopoverEl = null;
+
+function closeTransposePopover() {
+  if (_transposePopoverEl) { _transposePopoverEl.remove(); _transposePopoverEl = null; }
+  document.removeEventListener('pointerdown', onTransposePopoverOutsideClick, true);
+  document.removeEventListener('keydown', onTransposePopoverKeydown, true);
+}
+
+function onTransposePopoverOutsideClick(e) {
+  if (_transposePopoverEl && !_transposePopoverEl.contains(e.target)) closeTransposePopover();
+}
+
+function onTransposePopoverKeydown(e) {
+  if (e.key === 'Escape') closeTransposePopover();
+}
+
+function openTransposePopover(anchorEl) {
+  closeTransposePopover();
+
+  const rect = anchorEl.getBoundingClientRect();
+  const pop = document.createElement('div');
+  pop.className = 'repeat-popover';
+  pop.style.position = 'fixed';
+  pop.style.left = Math.max(4, Math.min(rect.left, window.innerWidth - 170)) + 'px';
+  pop.style.top  = (rect.bottom + 6) + 'px';
+  pop.innerHTML = `
+    <div class="repeat-popover-title">Transponer (semitonos)</div>
+    <label class="field-group">
+      <span class="field-label">±</span>
+      <input class="num-input tp-semitones" type="number" value="0" step="1">
+    </label>
+    <div class="repeat-popover-actions">
+      <button class="icon-btn tp-cancel" title="Cancelar" aria-label="Cancelar">✕</button>
+      <button class="copy-btn tp-ok">Aplicar</button>
+    </div>`;
+  document.body.appendChild(pop);
+  _transposePopoverEl = pop;
+
+  const input = pop.querySelector('.tp-semitones');
+  input.focus();
+  input.select();
+
+  pop.querySelector('.tp-ok').addEventListener('click', () => {
+    const semitones = parseInt(input.value, 10);
+    if (Number.isFinite(semitones) && semitones !== 0) transposeGlobal(semitones);
+    closeTransposePopover();
+  });
+  pop.querySelector('.tp-cancel').addEventListener('click', closeTransposePopover);
+
+  setTimeout(() => {
+    document.addEventListener('pointerdown', onTransposePopoverOutsideClick, true);
+    document.addEventListener('keydown', onTransposePopoverKeydown, true);
+  }, 0);
+}
+
+function bindTransposePopover() {
+  const btn = $('btn-transpose');
+  btn.addEventListener('click', () => {
+    if (_transposePopoverEl) { closeTransposePopover(); return; }
+    if (!state.notes.length) { showToast('No hay notas para transponer', { type: 'warn' }); return; }
+    openTransposePopover(btn);
+  });
+}
+
 // ── Herramienta "Armadura": modo activo, próximo clic en un compás
 // (2 o posterior) coloca ahí la armadura elegida en #key-tool-sel.
 // Excluyente con la inserción de notas y con "elegir repetición"
@@ -1753,6 +1839,7 @@ export function initUI() {
   bindKeyPicker();
   bindRepeatPanel();
   bindSettingsPopover();
+  bindTransposePopover();
 
   window.addEventListener('resize', requestRender);
 

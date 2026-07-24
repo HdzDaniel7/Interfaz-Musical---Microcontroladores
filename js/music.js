@@ -5,7 +5,7 @@
    ============================================================ */
 
 import {
-  PITCH_CLASS, ENUM_NAMES, DUR_BEATS, DO0_FREQ,
+  PITCH_CLASS, ENUM_NAMES, DUR_BEATS, DO0_FREQ, NOTE_SLOT,
 } from './constants.js';
 import { state } from './state.js';
 
@@ -79,6 +79,48 @@ export function resolvePitch(noteName, accidental, ks = state.keySignature) {
 export function noteFreq(noteName, accidental, z2, ks = state.keySignature) {
   const { pc, octave } = resolvePitch(noteName, accidental, ks);
   return DO0_FREQ * Math.pow(2, ((z2 + octave) * 12 + pc) / 12);
+}
+
+// ── Transposición cromática (semitonos) ───────────────────────
+// Desplaza una nota `semitones` (+/-) usando la misma aritmética de
+// semitonos que resolvePitch (nunca tablas de bemoles: siempre
+// deletrea con sostenidos, igual que ENUM_NAMES). Devuelve un
+// { note, accidental } listo para guardar en state.notes: si la nueva
+// altura ya suena bien con la armadura `ks` (sin cambiarla), el
+// accidental sale en 'none'; si no, se fuerza 'sharp'/'natural'
+// explícito. Si el resultado cae fuera del rango soportado
+// (SOL₋ … RE⁺²) se recorta a la octava alcanzable más cercana.
+const NATURAL_PC    = { DO: 0, RE: 2, MI: 4, FA: 5, SOL: 7, LA: 9, SI: 11 };
+const NATURAL_BY_PC = Object.fromEntries(Object.entries(NATURAL_PC).map(([b, pc]) => [pc, b]));
+const OCTAVE_SUFFIX  = { '-1': 'm', 0: '', 1: 'M', 2: 'MM' };
+
+export function transposeNote(noteName, accidental, semitones, ks = state.keySignature) {
+  const { base, octave } = parseNoteName(noteName);
+  const acc = accidental === 'sharp' ? 1
+            : accidental === 'flat' ? -1
+            : accidental === 'natural' ? 0
+            : keyAdjust(base, ks);
+  const total = (PITCH_CLASS[base] ?? 0) + acc + octave * 12 + semitones;
+
+  let newOctave = Math.floor(total / 12);
+  const pc      = ((total % 12) + 12) % 12;
+  let newBase, rawAcc;
+  if (NATURAL_BY_PC[pc] !== undefined) { newBase = NATURAL_BY_PC[pc]; rawAcc = 0; }
+  else                                 { newBase = NATURAL_BY_PC[pc - 1]; rawAcc = 1; }
+
+  newOctave = Math.max(-1, Math.min(2, newOctave));
+  let newName = newBase + (OCTAVE_SUFFIX[newOctave] ?? '');
+  if (!(newName in NOTE_SLOT)) {
+    // 'm' solo existe para SOL/LA/SI, 'MM' solo para DO/RE — recorta a
+    // la octava vecina (0/1), válida para las 7 letras.
+    newOctave = newOctave < 0 ? 0 : 1;
+    newName = newBase + (OCTAVE_SUFFIX[newOctave] ?? '');
+  }
+
+  const wantAdjust = keyAdjust(newBase, ks);
+  const newAccidental = rawAcc === wantAdjust ? 'none' : (rawAcc === 0 ? 'natural' : 'sharp');
+
+  return { note: newName, accidental: newAccidental };
 }
 
 // ══════════════════════════════════════════════════════════════
