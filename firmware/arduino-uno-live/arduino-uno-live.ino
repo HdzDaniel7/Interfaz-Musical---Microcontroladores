@@ -14,8 +14,12 @@
  *
  * ------------------------------------------------------------
  * PROTOCOLO (115200 baud, líneas terminadas en '\n')
- *   PC → UNO:   H · T<freq>,<ms> · S<ms> · X
+ *   PC → UNO:   H · T<freq>,<ms> · L<freq>,<ms> · S<ms> · X
  *   UNO → PC:   B (boot) · OK (handshake) · D (figura terminada)
+ *
+ * L = T pero LIGADA: no corta el tono al terminar (la siguiente figura
+ * cambia la frecuencia sin pasar por silencio, igual que el legato de
+ * Web Audio).
  *
  * La PC puede mandar la figura N+1 mientras N todavía suena (pipeline
  * de 1 evento): como sostener() solo consume bytes cuando son 'X', el
@@ -40,8 +44,11 @@ void setup() {
  * Toca `freq` Hz (0 = silencio) durante `ms`, revisando el serial:
  * si llega una 'X', corta al instante y aborta. Devuelve true si
  * terminó normal, false si fue interrumpida por un paro.
+ * `cortarAlFinal=false` (comando 'L') deja el buzzer sonando al
+ * terminar — la próxima figura cambia la frecuencia sin pasar por
+ * silencio, para que la ligadura no re-ataque.
  */
-bool sostener(uint16_t freq, uint32_t ms) {
+bool sostener(uint16_t freq, uint32_t ms, bool cortarAlFinal = true) {
   if (freq > 0) tone(BUZZER_PIN, freq);
   else          noTone(BUZZER_PIN);
 
@@ -57,7 +64,7 @@ bool sostener(uint16_t freq, uint32_t ms) {
     }
     delay(CHECK_MS);
   }
-  noTone(BUZZER_PIN);
+  if (cortarAlFinal) noTone(BUZZER_PIN);
   return true;
 }
 
@@ -84,6 +91,15 @@ void loop() {
       uint16_t freq = (uint16_t) linea.substring(1, coma).toInt();
       uint32_t ms   = (uint32_t) linea.substring(coma + 1).toInt();
       if (sostener(freq, ms)) Serial.println("D");
+      break;
+    }
+
+    case 'L': {                      // L<freq>,<ms> — como T, pero ligada (sin re-ataque)
+      int coma = linea.indexOf(',');
+      if (coma < 0) break;
+      uint16_t freq = (uint16_t) linea.substring(1, coma).toInt();
+      uint32_t ms   = (uint32_t) linea.substring(coma + 1).toInt();
+      if (sostener(freq, ms, false)) Serial.println("D");
       break;
     }
 

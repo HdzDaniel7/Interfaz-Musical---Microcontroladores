@@ -2,10 +2,12 @@
    serial.js — Reproducción en vivo por USB (Web Serial API)
    Envía la partitura, figura por figura, a un ESP32 con el
    firmware firmware/esp32-live. Protocolo (115200 baud, '\n'):
-     PC → ESP32:  H · T<freq>,<ms> · S<ms> · X
+     PC → ESP32:  H · T<freq>,<ms> · L<freq>,<ms> · S<ms> · X
      ESP32 → PC:  B · OK · D
-   La PC manda una figura y espera el 'D' (done) antes de la
-   siguiente: control de flujo simple, sin solapamientos.
+   L = T pero ligada (sin re-ataque, para transiciones legato).
+   Pipeline de 1 evento (H1): la figura N+1 se manda mientras N
+   todavía suena, sin esperar su 'D' — el 'D' de cada figura solo
+   se usa para saber cuándo avanzar el índice/la animación.
    ============================================================ */
 
 import { state } from './state.js';
@@ -146,9 +148,14 @@ export async function serialPlay(fromIdx = 0, { onNote = null } = {}) {
   if (!events.length) return;
   const beatSec = 60 / (state.bpm || 120);
 
+  // H2: si la figura enlaza en legato con la siguiente (sin re-ataque,
+  // igual que Web Audio), se manda con 'L' en vez de 'T' — el firmware
+  // no corta el tono al terminar, así la transición no re-ataca.
   const cmds = events.map(ev => {
     const ms = Math.max(1, Math.round(ev.durBeats * beatSec * 1000));
-    return { ms, str: ev.rest ? `S${ms}\n` : `T${Math.round(ev.freq)},${ms}\n` };
+    if (ev.rest)   return { ms, str: `S${ms}\n` };
+    const letra = ev.legato ? 'L' : 'T';
+    return { ms, str: `${letra}${Math.round(ev.freq)},${ms}\n` };
   });
 
   serialPlaying = true;

@@ -22,8 +22,12 @@
  *
  * ------------------------------------------------------------
  * PROTOCOLO (115200 baud, líneas terminadas en '\n')
- *   PC → MCU:   H · T<freq>,<ms> · S<ms> · X
+ *   PC → MCU:   H · T<freq>,<ms> · L<freq>,<ms> · S<ms> · X
  *   MCU → PC:   B (boot) · OK (handshake) · D (figura terminada)
+ *
+ * L = T pero LIGADA: no corta el PWM al terminar (la siguiente figura
+ * cambia la frecuencia sin pasar por silencio, igual que el legato de
+ * Web Audio).
  *
  * La PC puede mandar la figura N+1 mientras N todavía suena (pipeline
  * de 1 evento): la recepción es por interrupción (buffer circular,
@@ -128,9 +132,11 @@ static inline uint32_t millis(void) {
 /*
  * Mantiene `freq` Hz (0 = silencio) durante `ms`, revisando el USART:
  * si llega una 'X', corta al instante y aborta. Devuelve 1 si terminó
- * normal, 0 si fue interrumpida por un paro.
+ * normal, 0 si fue interrumpida por un paro. `cortarAlFinal=0` (comando
+ * 'L') deja el PWM sonando al terminar — la próxima figura cambia la
+ * frecuencia sin pasar por silencio, para que la ligadura no re-ataque.
  */
-uint8_t sostener(uint16_t freq, uint16_t ms) {
+uint8_t sostener(uint16_t freq, uint16_t ms, uint8_t cortarAlFinal) {
   set_pwm_frequency(freq);
   uint32_t inicio = millis();
   while ((millis() - inicio) < (uint32_t)ms) {
@@ -144,7 +150,7 @@ uint8_t sostener(uint16_t freq, uint16_t ms) {
     }
     _delay_ms(CHECK_MS);
   }
-  set_pwm_frequency(0);
+  if (cortarAlFinal) set_pwm_frequency(0);
   return 1;
 }
 
@@ -164,13 +170,21 @@ void procesar(char *linea) {
       char *p;
       uint16_t freq = (uint16_t) strtoul(linea + 1, &p, 10);
       uint16_t ms   = (*p == ',') ? (uint16_t) strtoul(p + 1, NULL, 10) : 0;
-      if (sostener(freq, ms)) uart_print("D\n");
+      if (sostener(freq, ms, 1)) uart_print("D\n");
+      break;
+    }
+
+    case 'L': {                               /* L<freq>,<ms> — como T, pero ligada (sin re-ataque) */
+      char *p;
+      uint16_t freq = (uint16_t) strtoul(linea + 1, &p, 10);
+      uint16_t ms   = (*p == ',') ? (uint16_t) strtoul(p + 1, NULL, 10) : 0;
+      if (sostener(freq, ms, 0)) uart_print("D\n");
       break;
     }
 
     case 'S': {                               /* S<ms> */
       uint16_t ms = (uint16_t) strtoul(linea + 1, NULL, 10);
-      if (sostener(0, ms)) uart_print("D\n");
+      if (sostener(0, ms, 1)) uart_print("D\n");
       break;
     }
   }

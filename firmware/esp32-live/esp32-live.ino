@@ -19,6 +19,9 @@
  *   PC → ESP32:
  *     H              handshake / ping        → responde "OK"
  *     T<freq>,<ms>   toca <freq> Hz, <ms> ms → responde "D" al terminar
+ *     L<freq>,<ms>   = T, pero LIGADA: no corta el tono al terminar (la
+ *                    siguiente figura cambia la frecuencia sin re-atacar,
+ *                    igual que el legato de Web Audio)
  *     S<ms>          silencio de <ms> ms     → responde "D" al terminar
  *     X              paro inmediato (calla el buzzer ya, aun a media nota)
  *
@@ -52,9 +55,11 @@ void setup() {
  * Mantiene el buzzer en `freq` (0 = silencio) durante `ms`, pero
  * revisa el serial cada CHECK_MS: si llega una 'X', corta al
  * instante y aborta. Devuelve true si terminó normal, false si
- * fue interrumpida por un paro.
+ * fue interrumpida por un paro. `cortarAlFinal=false` (comando 'L')
+ * deja el buzzer sonando al terminar — la próxima figura cambia la
+ * frecuencia sin pasar por silencio, para que la ligadura no re-ataque.
  */
-bool sostener(uint16_t freq, uint32_t ms) {
+bool sostener(uint16_t freq, uint32_t ms, bool cortarAlFinal = true) {
   ledcWriteTone(BUZZER_PIN, freq);
   uint32_t inicio = millis();
   while (millis() - inicio < ms) {
@@ -68,7 +73,7 @@ bool sostener(uint16_t freq, uint32_t ms) {
     }
     delay(CHECK_MS);
   }
-  ledcWriteTone(BUZZER_PIN, 0);
+  if (cortarAlFinal) ledcWriteTone(BUZZER_PIN, 0);
   return true;
 }
 
@@ -95,6 +100,15 @@ void loop() {
       uint16_t freq = (uint16_t) linea.substring(1, coma).toInt();
       uint32_t ms   = (uint32_t) linea.substring(coma + 1).toInt();
       if (sostener(freq, ms)) Serial.println("D");
+      break;
+    }
+
+    case 'L': {                      // L<freq>,<ms> — como T, pero ligada (sin re-ataque)
+      int coma = linea.indexOf(',');
+      if (coma < 0) break;
+      uint16_t freq = (uint16_t) linea.substring(1, coma).toInt();
+      uint32_t ms   = (uint32_t) linea.substring(coma + 1).toInt();
+      if (sostener(freq, ms, false)) Serial.println("D");
       break;
     }
 
