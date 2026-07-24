@@ -99,6 +99,14 @@
             </select>
           </label>
 
+          <label class="field-group" title="Clave del pentagrama (solo visual: recoloca las notas en las líneas, no cambia el sonido ni el código)">
+            <span class="field-label">Clave</span>
+            <select class="sel-input" id="clef-sel">
+              <option value="treble" selected>Sol</option>
+              <option value="bass">Fa</option>
+            </select>
+          </label>
+
           <label class="field-group" title="Armadura inicial (compás 1)">
             <span class="field-label">Armadura</span>
             <select class="sel-input" id="key-sig-sel">
@@ -424,13 +432,13 @@
           </section>
 
           <section class="prop-section">
-            <h3 class="section-title">Líneas del pentagrama</h3>
+            <h3 class="section-title">Líneas del pentagrama · <span id="staff-ref-clef">clave de Sol</span></h3>
             <div class="staff-ref">
-              <div class="staff-ref-row"><span>Línea 5 (sup.)</span><strong>FA⁺</strong></div>
-              <div class="staff-ref-row"><span>Línea 4</span><strong>RE⁺</strong></div>
-              <div class="staff-ref-row"><span>Línea 3</span><strong>SI</strong></div>
-              <div class="staff-ref-row"><span>Línea 2</span><strong>SOL</strong></div>
-              <div class="staff-ref-row"><span>Línea 1 (inf.)</span><strong>MI ← ref. 0</strong></div>
+              <div class="staff-ref-row"><span>Línea 5 (sup.)</span><strong id="staff-ref-l5">FA⁺</strong></div>
+              <div class="staff-ref-row"><span>Línea 4</span><strong id="staff-ref-l4">RE⁺</strong></div>
+              <div class="staff-ref-row"><span>Línea 3</span><strong id="staff-ref-l3">SI</strong></div>
+              <div class="staff-ref-row"><span>Línea 2</span><strong id="staff-ref-l2">SOL</strong></div>
+              <div class="staff-ref-row"><span>Línea 1 (inf.)</span><strong id="staff-ref-l1">MI ← ref. 0</strong></div>
             </div>
           </section>
 

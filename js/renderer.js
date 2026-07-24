@@ -87,25 +87,50 @@ export function sY(row, line) {
   return ST + row * RH + line * SS;
 }
 
+// ── Clave (Sol/Fa): desplaza qué nota cae en cada línea/espacio ──
+// NOTE_SLOT está tabulado para clave de Sol (MI = línea 1 = slot 0).
+// En clave de Fa la línea 1 es SOL, 2 pasos diatónicos por encima de MI,
+// así que basta restar 2 al slot de cada nota — el resto de la geometría
+// (líneas, plicas, ledger lines, armadura) no cambia, solo QUÉ nota cae
+// en cada posición. No afecta el cálculo de frecuencia/audio/codegen,
+// que usa PITCH_CLASS/octava, ajeno a NOTE_SLOT.
+function clefOffset() {
+  return state.clef === 'bass' ? -2 : 0;
+}
+
+// Slot visual ya ajustado por la clave activa (uso interno del renderer).
+function displaySlot(naturalNote) {
+  const raw = NOTE_SLOT[naturalNote] !== undefined ? NOTE_SLOT[naturalNote] : 0;
+  return raw + clefOffset();
+}
+
 export function noteToY(naturalNote, row) {
-  const slot = NOTE_SLOT[naturalNote] !== undefined ? NOTE_SLOT[naturalNote] : 0;
-  return sY(row, 4) - slot * (SS / 2);
+  return sY(row, 4) - displaySlot(naturalNote) * (SS / 2);
 }
 
 export function yToNote(y, row) {
+  const off  = clefOffset();
   const rel  = sY(row, 4) - y;
-  const slot = Math.max(SLOT_MIN, Math.min(SLOT_MAX, Math.round(rel / (SS / 2))));
-  return SLOT_TO_NOTE[slot] || 'MI';
+  const slot = Math.max(SLOT_MIN + off, Math.min(SLOT_MAX + off, Math.round(rel / (SS / 2))));
+  return SLOT_TO_NOTE[slot - off] || 'MI';
 }
 
-// Extensión vertical clickeable de cada fila:
-// slots por encima de la 5ª línea y por debajo de la 1ª + margen
-const ROW_EXT = Math.ceil((SLOT_MAX - 8) * SS / 2) + 6; // = 31px
+// Extensión vertical clickeable de cada fila: slots por encima de la 5ª
+// línea y por debajo de la 1ª + margen. Depende de la clave activa porque
+// el offset de clave corre el rango de notas hacia arriba o abajo del
+// pentagrama de forma asimétrica (a diferencia de clave de Sol, donde el
+// rango de notas es simétrico respecto de las 5 líneas).
+function rowExt() {
+  const off       = clefOffset();
+  const upMargin  = (SLOT_MAX + off) - 8;   // cuánto asoma sobre la línea 5
+  const downMargin = 0 - (SLOT_MIN + off);  // cuánto asoma bajo la línea 1
+  return Math.ceil(Math.max(upMargin, downMargin) * SS / 2) + 6;
+}
 
 export function getRow(y) {
   for (let r = 0; r < RPP; r++) {
-    const top = sY(r, 0) - ROW_EXT;
-    const bot = sY(r, 4) + ROW_EXT;
+    const top = sY(r, 0) - rowExt();
+    const bot = sY(r, 4) + rowExt();
     if (y >= top && y <= bot) return r;
   }
   return -1;
@@ -286,8 +311,12 @@ const KEYSIG_FONT = 'bold 18px serif';
 
 // Dibuja los glifos de una armadura (ks) a partir de xStart en la fila pageRow.
 // `color` opcional (usado por el fantasma de la herramienta "Armadura").
+// SHARP_SLOTS/FLAT_SLOTS son slots reales de clave de Sol (FA♯=8, DO♯=5,
+// etc.) — se les aplica el mismo clefOffset() que a las notas para que la
+// armadura se dibuje en la posición correcta también en clave de Fa.
 function drawKeySigGlyphs(xStart, pageRow, ks, color) {
   if (!ks) return;
+  const off   = clefOffset();
   const slots = (ks > 0 ? SHARP_SLOTS : FLAT_SLOTS).slice(0, Math.abs(ks));
   const glyph = ks > 0 ? '♯' : '♭';
   ctx.fillStyle    = color || cssVar('--staff-clef');
@@ -295,7 +324,7 @@ function drawKeySigGlyphs(xStart, pageRow, ks, color) {
   ctx.textAlign    = 'center';
   ctx.textBaseline = 'middle';
   slots.forEach((slot, k) => {
-    ctx.fillText(glyph, xStart + k * KEYSIG_STEP, sY(pageRow, 4) - slot * (SS / 2));
+    ctx.fillText(glyph, xStart + k * KEYSIG_STEP, sY(pageRow, 4) - (slot + off) * (SS / 2));
   });
 }
 
@@ -452,12 +481,18 @@ function drawStaff() {
       ctx.stroke();
     }
 
-    // Clave de SOL
+    // Clave (Sol o Fa, según state.clef — solo cambia el glifo/posición;
+    // el mapeo real de notas a líneas lo maneja displaySlot()/clefOffset())
     ctx.fillStyle    = cssVar('--staff-clef');
-    ctx.font         = 'bold 46px serif';
     ctx.textAlign    = 'left';
     ctx.textBaseline = 'alphabetic';
-    ctx.fillText('𝄞', ML - 50, sY(r, 0) + 38);
+    if (state.clef === 'bass') {
+      ctx.font = 'bold 34px serif';
+      ctx.fillText('𝄢', ML - 48, sY(r, 1) + 14);
+    } else {
+      ctx.font = 'bold 46px serif';
+      ctx.fillText('𝄞', ML - 50, sY(r, 0) + 38);
+    }
 
     // Indicador de compás
     ctx.font         = `bold ${SS * 1.4}px sans-serif`;
@@ -525,7 +560,7 @@ function drawNote(n, x, row, { selected = false, isActive = false, ghost = false
   const y      = noteToY(n.note, row);
   const t0     = sY(row, 0);
   const t4     = sY(row, 4);
-  const slot   = NOTE_SLOT[n.note] !== undefined ? NOTE_SLOT[n.note] : 0;
+  const slot   = displaySlot(n.note);
   const stemUp = slot < 4;
 
   // Líneas auxiliares
@@ -726,7 +761,7 @@ function drawBeams(groups, rowOffset, selSet) {
     if (pageRow < 0 || pageRow >= RPP) continue;
 
     const ys = group.map(it => noteToY(it.note.note, pageRow));
-    const avgSlot = group.reduce((s, it) => s + (NOTE_SLOT[it.note.note] ?? 0), 0) / group.length;
+    const avgSlot = group.reduce((s, it) => s + displaySlot(it.note.note), 0) / group.length;
     const up = avgSlot < 4;
     const beamY = up ? Math.min(...ys) - 30 : Math.max(...ys) + 30;
     const stemX = it => (up ? it.x + 6 : it.x - 6);
@@ -801,7 +836,7 @@ function drawTripletBrackets(groups, rowOffset) {
 
     const ys = g.map(it => it.note.rest ? sY(pageRow, 2) : noteToY(it.note.note, pageRow));
     const avgSlot = g.reduce((s, it) =>
-      s + (it.note.rest ? 4 : (NOTE_SLOT[it.note.note] ?? 0)), 0) / g.length;
+      s + (it.note.rest ? 4 : displaySlot(it.note.note)), 0) / g.length;
     const up  = avgSlot < 4;             // plicas/barra hacia arriba
     const top = Math.min(...ys);
     const y   = up ? top - 40 : top - 14; // por encima de plicas o cabezas
@@ -846,7 +881,7 @@ function drawTies(items, rowOffset) {
     // Arco de salida: solo si la nota origen es visible en esta página
     if (pageRow >= 0 && pageRow < RPP) {
       const y1   = noteToY(n.note, pageRow);
-      const slot = NOTE_SLOT[n.note] ?? 0;
+      const slot = displaySlot(n.note);
       const up   = slot < 2; // arco por arriba para notas graves, abajo para agudas
       const off  = up ? -8 : 10;
 
@@ -870,7 +905,7 @@ function drawTies(items, rowOffset) {
       const pageRow2 = next.row - rowOffset;
       if (pageRow2 >= 0 && pageRow2 < RPP) {
         const y2    = noteToY(next.note.note, pageRow2);
-        const slot2 = NOTE_SLOT[next.note.note] ?? 0;
+        const slot2 = displaySlot(next.note.note);
         const up2   = slot2 < 2;
         const off2  = up2 ? -8 : 10;
 

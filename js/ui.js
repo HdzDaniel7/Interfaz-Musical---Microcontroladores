@@ -903,6 +903,14 @@ function bindToolbar() {
     scheduleSave();
   });
 
+  $('clef-sel').addEventListener('change', e => {
+    pushHistory(); // recoloca todas las notas en el pentagrama: deshacible como paso propio
+    state.clef = e.target.value === 'bass' ? 'bass' : 'treble';
+    updateStaffRefLabels();
+    render(); // no toca el código: la clave es puramente visual (audio/codegen ajenos a NOTE_SLOT)
+    scheduleSave();
+  });
+
   // MCU: combobox generado desde el registro de plantillas
   const mcuSel = $('mcu-sel');
   mcuSel.innerHTML = '';
@@ -1676,8 +1684,30 @@ export function syncControlsFromState() {
   if ([...ksSel.options].some(o => o.value === ksVal)) ksSel.value = ksVal;
   else { ksSel.value = '0'; state.keySignature = 0; }
 
+  $('clef-sel').value = state.clef === 'bass' ? 'bass' : 'treble';
+  updateStaffRefLabels();
+
   $('mcu-sel').value = state.mcu;
   syncExtraCodeUI();
+}
+
+// Referencia "Líneas del pentagrama" (Propiedades): qué nota cae en cada
+// línea, según la clave activa. Los slots de línea (0,2,4,6,8, de abajo
+// hacia arriba) son fijos por geometría; la clave solo cambia el offset
+// que traduce esos slots a nombres de nota reales (mismo cálculo que
+// clefOffset()/displaySlot() en renderer.js, sin duplicar ese módulo
+// porque acá alcanza con los 5 puntos fijos de línea, no todo el rango).
+function updateStaffRefLabels() {
+  const off    = state.clef === 'bass' ? -2 : 0;
+  const lines  = { l1: 0, l2: 2, l3: 4, l4: 6, l5: 8 };
+  for (const [id, displaySlotVal] of Object.entries(lines)) {
+    const raw   = displaySlotVal - off;
+    const name  = SLOT_TO_NOTE[raw];
+    let label   = name ? NOTE_DISPLAY[name] : '?';
+    if (id === 'l1' && state.clef !== 'bass') label += ' ← ref. 0';
+    $(`staff-ref-${id}`).textContent = label;
+  }
+  $('staff-ref-clef').textContent = state.clef === 'bass' ? 'clave de Fa' : 'clave de Sol';
 }
 
 // ══════════════════════════════════════════════════════════════

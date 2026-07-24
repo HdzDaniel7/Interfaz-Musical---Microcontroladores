@@ -15,6 +15,7 @@ export const state = {
   bpm:           120,
   mcu:           'esp32',
   timeSignature: { num: 4, den: 4 },
+  clef:          'treble', // clave: 'treble' (Sol) o 'bass' (Fa) — solo visual, no toca audio/codegen
   keySignature:  0,    // armadura INICIAL (compás 1): sostenidos (+) / bemoles (−), 0 = Do M
   // Cambios de armadura a mitad de pieza: [{ measure, key }] (measure = índice
   // de compás 0-based, ≥1; key = semitonos de armadura, −7..7). La armadura
@@ -46,6 +47,7 @@ function snapshotState() {
     bpm:           state.bpm,
     z2:            state.z2,
     title:         state.title,
+    clef:          state.clef,
   };
 }
 
@@ -67,6 +69,7 @@ function applySnapshot(snap) {
   state.bpm            = snap.bpm;
   state.z2             = snap.z2;
   state.title          = snap.title;
+  state.clef           = snap.clef === 'bass' ? 'bass' : 'treble';
 }
 
 export function pushHistory() {
@@ -213,6 +216,7 @@ function applyProjectData(d) {
   state.timeSignature = sanitizeTimeSignature(d.timeSignature);
   state.keySignature  = Number.isInteger(d.keySignature)
     ? Math.max(-7, Math.min(7, d.keySignature)) : 0;
+  state.clef          = d.clef === 'bass' ? 'bass' : 'treble';
   state.extraCode     = sanitizeExtraCode(d.extraCode);
 }
 
@@ -229,6 +233,7 @@ export function exportProject() {
     bpm:           state.bpm,
     mcu:           state.mcu,
     timeSignature: state.timeSignature,
+    clef:          state.clef,
     keySignature:  state.keySignature,
     keyChanges:    state.keyChanges,
     extraCode:     state.extraCode,
