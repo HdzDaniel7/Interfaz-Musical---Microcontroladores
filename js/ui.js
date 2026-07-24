@@ -213,6 +213,18 @@ function updateStatus() {
   $('status-timesig').textContent = `Compás: ${ts.num}/${ts.den}`;
   $('status-mcu').textContent     = `MCU: ${getTemplate(state.mcu).label}`;
 
+  // Armadura vigente en la nota seleccionada (o el compás 1 si no hay
+  // selección) — badge puramente informativo en la barra, junto a la
+  // herramienta "Armadura": con cambios de armadura a mitad de pieza
+  // (Fase 8), la del compás 1 (#key-sig-sel) puede no ser la que rige
+  // donde está parado el usuario.
+  const curMeasureIdx = state.selectedNote >= 0
+    ? measures.findIndex(m => state.selectedNote >= m.startIdx && state.selectedNote < m.endIdx)
+    : 0;
+  const effKey = keyAt(curMeasureIdx >= 0 ? curMeasureIdx : 0);
+  const keyOpt = [...$('key-tool-sel').options].find(o => Number(o.value) === effKey);
+  $('key-current-ind').textContent = keyOpt ? keyOpt.textContent : 'Do M';
+
   // Mientras suena, el compás/beat actual lo escribe directamente el
   // tick del playhead (audio.js) cuadro a cuadro — más barato que
   // recalcularlo acá, y evita pisarlo en cada frame de reproducción.
