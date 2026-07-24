@@ -5,7 +5,7 @@
    ============================================================ */
 
 import { state } from './state.js';
-import { noteFreq, buildSchedule, beatsPerMeasure } from './music.js';
+import { noteFreq, buildSchedule, beatsPerMeasure, analyzeMeasures } from './music.js';
 import { RPP } from './constants.js';
 import {
   render, setActiveNote, setPlayhead, buildLayout,
@@ -22,6 +22,9 @@ let _rafId        = 0;
 let _metronomeOn  = false;
 let _clickOscs    = []; // osciladores del metrónomo de la reproducción actual
 let _timbre       = 'square'; // solo monitoreo en PC — el hardware siempre es onda cuadrada
+let _loopOn       = false;   // bucle A-B activo
+let _loopFrom     = 0;       // compás inicial del bucle (0-based)
+let _loopTo       = 0;       // compás final del bucle (0-based, inclusive)
 
 const RAMP = 0.004; // rampa anti-click (4 ms)
 
@@ -34,6 +37,16 @@ export function getTimbre() { return _timbre; }
 // ── Metrónomo ──────────────────────────────────────────────────
 export function setMetronomeEnabled(v) { _metronomeOn = !!v; }
 export function isMetronomeEnabled() { return _metronomeOn; }
+
+// ── Bucle A-B (repite en bucle el rango de compases mientras suena
+// por PC; el reinicio lo dispara finishPlayback()) ─────────────
+export function setLoopRange(fromMeasure, toMeasure) {
+  _loopFrom = fromMeasure;
+  _loopTo   = toMeasure;
+}
+export function setLoopEnabled(v) { _loopOn = !!v; }
+export function isLoopEnabled() { return _loopOn; }
+export function getLoopRange() { return { from: _loopFrom, to: _loopTo }; }
 
 // Click corto (~30 ms): 1000 Hz normal, 1500 Hz de acento en el beat 1.
 function scheduleClick(ctx, time, accent) {
@@ -117,9 +130,9 @@ export function previewNote(noteName, accidental, durMs = 150) {
 // `ctx` a partir de `fromIdx`, con `leadIn` segundos antes del primer
 // evento. buildSchedule() ya expande repeticiones y resuelve ligaduras;
 // acá solo se traduce cada evento a la envolvente del oscilador.
-function scheduleNoteEnvelope(ctx, osc, gain, fromIdx, leadIn) {
+function scheduleNoteEnvelope(ctx, osc, gain, fromIdx, leadIn, toIdx = Infinity) {
   const beatSec  = 60 / (state.bpm || 120);
-  const events   = buildSchedule(fromIdx);
+  const events   = buildSchedule(fromIdx, toIdx);
   const t0       = ctx.currentTime + leadIn;
   const schedule = [];
   let t = t0;
@@ -163,6 +176,18 @@ export function playScore(fromIdx = 0) {
   if (_playing || !state.notes.length) return;
   if (fromIdx < 0 || fromIdx >= state.notes.length) fromIdx = 0;
 
+  // Bucle A-B activo: el rango de compases elegido manda sobre fromIdx.
+  let toIdx = Infinity;
+  if (_loopOn) {
+    const measures = analyzeMeasures();
+    if (measures.length) {
+      const from = Math.max(0, Math.min(_loopFrom, measures.length - 1));
+      const to   = Math.max(from, Math.min(_loopTo, measures.length - 1));
+      fromIdx = measures[from].startIdx;
+      toIdx   = measures[to].endIdx - 1;
+    }
+  }
+
   const ctx = ensureCtx();
 
   _playing = true;
@@ -180,7 +205,7 @@ export function playScore(fromIdx = 0) {
   gain.gain.value       = 0;
   masterGain.gain.value = currentVolume;
 
-  const { t0, t, schedule } = scheduleNoteEnvelope(ctx, osc, gain, fromIdx, 0.06);
+  const { t0, t, schedule } = scheduleNoteEnvelope(ctx, osc, gain, fromIdx, 0.06, toIdx);
 
   // ── Playhead animado + seguimiento de página ───────────────
   const { items } = buildLayout(); // snapshot (las notas no cambian al reproducir)
@@ -238,7 +263,9 @@ export function playScore(fromIdx = 0) {
   _rafId = requestAnimationFrame(tick);
 }
 
-function finishPlayback() {
+// `allowLoop`: false cuando el fin lo pidió el usuario (stopScore) — en
+// ese caso el bucle A-B no debe reiniciar la reproducción.
+function finishPlayback(allowLoop = true) {
   cancelAnimationFrame(_rafId);
   _playing   = false;
   currentOsc = null;
@@ -247,6 +274,7 @@ function finishPlayback() {
   setActiveNote(-1);
   setPlayhead(null);
   render();
+  if (allowLoop && _loopOn) playScore(0); // fromIdx real lo recalcula playScore desde el rango del bucle
 }
 
 export function stopScore() {
@@ -265,7 +293,7 @@ export function stopScore() {
     if (masterGain) masterGain.disconnect();
   } catch (e) { /* ya detenido */ }
   stopClicks();
-  finishPlayback();
+  finishPlayback(false);
 }
 
 // ── Exportar WAV (OfflineAudioContext, sin dependencias) ──────

@@ -22,6 +22,7 @@ import {
 import {
   playScore, stopScore, setVolume, previewNote, isPlaying,
   setMetronomeEnabled, setTimbre, renderWavBlob,
+  setLoopEnabled, setLoopRange,
 } from './audio.js';
 import {
   isSerialSupported, isSerialConnected, isSerialPlaying, onSerialStatus,
@@ -1380,6 +1381,28 @@ function bindActions() {
     setMetronomeEnabled(on);
     metroBtn.setAttribute('aria-pressed', String(on));
     saveUIPrefs({ metronome: on });
+  });
+
+  // ── Bucle A-B (repite en bucle el rango de compases elegido; solo PC,
+  // no persiste — depende del contenido de cada pieza) ──
+  const loopBtn     = $('btn-loop');
+  const loopFromInp = $('loop-from');
+  const loopToInp   = $('loop-to');
+
+  function syncLoopRange() {
+    const from = Math.max(1, parseInt(loopFromInp.value, 10) || 1);
+    const to   = Math.max(from, parseInt(loopToInp.value, 10) || from);
+    setLoopRange(from - 1, to - 1);
+  }
+  syncLoopRange();
+  loopFromInp.addEventListener('change', syncLoopRange);
+  loopToInp.addEventListener('change', syncLoopRange);
+
+  loopBtn.addEventListener('click', () => {
+    const on = loopBtn.getAttribute('aria-pressed') !== 'true';
+    syncLoopRange();
+    setLoopEnabled(on);
+    loopBtn.setAttribute('aria-pressed', String(on));
   });
 
   // ── Timbre (solo monitoreo en PC; persistido en editor-musical-ui) ──

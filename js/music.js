@@ -263,7 +263,10 @@ export function expandedNoteIndices() {
 //     legato   → true si enlaza con la siguiente sin articular
 // La consumen audio.js (Web Audio) y serial.js (ESP32 por USB), así
 // ambos tocan exactamente la misma secuencia.
-export function buildSchedule(fromIdx = 0) {
+// `toIdx` (opcional) acota el final: se detiene apenas se cruza ese
+// índice de nota — lo usa el bucle A-B de audio.js para no salir del
+// rango de compases elegido.
+export function buildSchedule(fromIdx = 0, toIdx = Infinity) {
   const measures = analyzeMeasures();
   const keyMap   = buildNoteKeyMap(measures);   // armadura efectiva por nota
   const order    = expandedNoteIndices();
@@ -272,6 +275,7 @@ export function buildSchedule(fromIdx = 0) {
 
   const events = [];
   for (const idx of order.slice(startPos)) {
+    if (idx > toIdx) break;
     if (consumed.has(idx)) continue; // absorbida por una ligadura
     const n        = state.notes[idx];
     const members  = chains.get(idx) || [idx];
