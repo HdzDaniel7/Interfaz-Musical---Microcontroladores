@@ -5,7 +5,7 @@
 import {
   state, pushHistory, undo, redo, deleteSelected, clearAll, clearSelection,
   exportProject, importProject, scheduleSave, saveNow, saveTheme,
-  saveUIPrefs, loadUIPrefs,
+  saveUIPrefs, loadUIPrefs, deleteSelectedRepeat, deleteSelectedKeyChange,
 } from './state.js';
 import {
   NOTE_DISPLAY, NOTE_SLOT, SLOT_MIN, SLOT_MAX, SLOT_TO_NOTE, Z2_MIN, Z2_MAX,
@@ -17,7 +17,7 @@ import {
   canvas, render, requestRender, setCursor, clearCursor,
   getRow, yToNote, noteAt, insertionIndexAt, measureAt, onAfterRender, invalidateThemeCache,
   setActiveNote, getZoom, setZoom, setKeyChangeGhost, clearKeyChangeGhost,
-  setRepeatGhost, clearRepeatGhost,
+  setRepeatGhost, clearRepeatGhost, repeatSignAt, keyChangeMarkAt,
 } from './renderer.js';
 import {
   playScore, stopScore, setVolume, previewNote, isPlaying,
@@ -428,7 +428,21 @@ function afterNotesChanged() {
 
 function doUndo() { if (undo()) { syncControlsFromState(); afterNotesChanged(); } }
 function doRedo() { if (redo()) { syncControlsFromState(); afterNotesChanged(); } }
-function doDelete() { if (deleteSelected()) { afterNotesChanged(); } }
+
+// Supr: si hay una repetición o un cambio de armadura seleccionado en la
+// partitura (clic sobre su marca), se borra eso primero — mismo botón que
+// borrar una nota, mutuamente excluyente con la selección de notas.
+function doDelete() {
+  if (state.selectedRepeatIdx >= 0) {
+    if (deleteSelectedRepeat()) afterNotesChanged();
+    return;
+  }
+  if (state.selectedKeyChangeMeasure >= 0) {
+    if (deleteSelectedKeyChange()) afterNotesChanged();
+    return;
+  }
+  if (deleteSelected()) { afterNotesChanged(); }
+}
 
 function doClearAll() {
   if (!state.notes.length) return;
@@ -614,6 +628,8 @@ function bindCanvas() {
     // Clic sobre nota existente → seleccionar e iniciar arrastre
     const hit = noteAt(cx, cy);
     if (hit >= 0) {
+      state.selectedRepeatIdx = -1;
+      state.selectedKeyChangeMeasure = -1;
       if (e.shiftKey && state.selectedNote >= 0) {
         // Shift: rango desde la nota primaria
         const a = Math.min(state.selectedNote, hit);
@@ -643,6 +659,24 @@ function bindCanvas() {
       _dragHistoryPushed = false;
       const n = state.notes[hit];
       if (n && !n.rest) previewNote(n.note, n.accidental, 120);
+      render();
+      return;
+    }
+
+    // Clic sobre un signo de repetición o una marca de cambio de armadura
+    // → seleccionarlo para poder borrarlo con Supr (igual que una nota),
+    // sin insertar ninguna nota nueva ni tocar la selección de notas.
+    const repHit = repeatSignAt(cx, cy);
+    if (repHit) {
+      clearSelection();
+      state.selectedRepeatIdx = state.repeats.indexOf(repHit);
+      render();
+      return;
+    }
+    const kcMeasure = keyChangeMarkAt(cx, cy);
+    if (kcMeasure >= 0) {
+      clearSelection();
+      state.selectedKeyChangeMeasure = kcMeasure;
       render();
       return;
     }
@@ -1639,7 +1673,9 @@ function bindKeyboard() {
         // Backspace dispara "atrás" en algunos navegadores: prevenirlo siempre
         // fuera de campos de texto para no perder el trabajo sin querer.
         e.preventDefault();
-        if (state.selectedNote >= 0) doDelete();
+        if (state.selectedNote >= 0 || state.selectedRepeatIdx >= 0 || state.selectedKeyChangeMeasure >= 0) {
+          doDelete();
+        }
         break;
       case ' ':
         // No secuestrar Espacio cuando el foco está en un botón: dejá que

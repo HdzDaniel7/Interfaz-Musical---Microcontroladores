@@ -23,6 +23,11 @@ export const state = {
   keyChanges:    [],
   selectedNote:  -1,   // nota primaria (sync con el código)
   selection:     [],   // selección múltiple (incluye la primaria)
+  // Selección de una repetición/cambio de armadura clickeado en la partitura
+  // (excluyente con selectedNote/selection) — permite borrarlos con Supr,
+  // igual que una nota. Efímera: no se persiste ni entra en el historial.
+  selectedRepeatIdx:         -1, // índice en state.repeats, o -1
+  selectedKeyChangeMeasure:  -1, // kc.measure en state.keyChanges, o -1
   history:       [],
   redoStack:     [],
   activeTool:    { dur: 'T', rest: false, dotted: false, triplet: false },
@@ -81,6 +86,8 @@ export function pushHistory() {
 export function clearSelection() {
   state.selectedNote = -1;
   state.selection = [];
+  state.selectedRepeatIdx = -1;
+  state.selectedKeyChangeMeasure = -1;
 }
 
 export function undo() {
@@ -108,6 +115,24 @@ export function deleteSelected() {
   pushHistory();
   idxs.sort((a, b) => b - a).forEach(i => state.notes.splice(i, 1));
   clearSelection();
+  return true;
+}
+
+// Borra la repetición/cambio de armadura elegido en la partitura (clic
+// sobre su marca en el pentagrama) — mismo botón Supr que las notas.
+export function deleteSelectedRepeat() {
+  if (state.selectedRepeatIdx < 0) return false;
+  pushHistory();
+  state.repeats.splice(state.selectedRepeatIdx, 1);
+  state.selectedRepeatIdx = -1;
+  return true;
+}
+
+export function deleteSelectedKeyChange() {
+  if (state.selectedKeyChangeMeasure < 0) return false;
+  pushHistory();
+  state.keyChanges = state.keyChanges.filter(kc => kc.measure !== state.selectedKeyChangeMeasure);
+  state.selectedKeyChangeMeasure = -1;
   return true;
 }
 

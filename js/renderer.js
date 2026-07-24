@@ -963,6 +963,95 @@ function drawRepeatSigns(boxes, rowOffset) {
   }
 }
 
+// ── Hit-test: signo de repetición (apertura o cierre) en (cx,cy) ──
+// Devuelve la referencia real de state.repeats (sanitizedRepeats() filtra
+// pero no clona, así que sirve para ubicar el índice a borrar) o null.
+export function repeatSignAt(cx, cy) {
+  const { boxes } = buildLayout();
+  const reps = sanitizedRepeats(boxes.length);
+  const rowOffset = state.currentPage * RPP;
+  for (const rep of reps) {
+    const a = boxes[rep.from], b = boxes[rep.to];
+    if (!a || !b) continue;
+    const rowA = a.row - rowOffset, rowB = b.row - rowOffset;
+    if (rowA >= 0 && rowA < RPP) {
+      const yTop = sY(rowA, 0), yBot = sY(rowA, 4);
+      if (cx >= a.x0 - 6 && cx <= a.x0 + 14 && cy >= yTop - 4 && cy <= yBot + 4) return rep;
+    }
+    if (rowB >= 0 && rowB < RPP) {
+      const yTop = sY(rowB, 0), yBot = sY(rowB, 4);
+      if (cx >= b.x0 + b.w - 16 && cx <= b.x0 + b.w + 6 && cy >= yTop - 18 && cy <= yBot + 4) return rep;
+    }
+  }
+  return null;
+}
+
+// ── Hit-test: marca de cambio de armadura en (cx,cy) ──────────
+// Devuelve kc.measure (índice de compás 0-based) o -1. Misma zona que
+// dibuja el bloque "Marca de cambio de tonalidad" de drawKeySignatures.
+export function keyChangeMarkAt(cx, cy) {
+  const { boxes } = buildLayout();
+  const rowOffset = state.currentPage * RPP;
+  for (const b of boxes) {
+    if (b.measureIdx === 0) continue;
+    const cur = keyAt(b.measureIdx), prev = keyAt(b.measureIdx - 1);
+    if (cur === prev) continue;
+    const pr = b.row - rowOffset;
+    if (pr < 0 || pr >= RPP) continue;
+    const yTop = sY(pr, 0);
+    if (cx >= b.x0 - 6 && cx <= b.x0 + 50 && cy >= yTop - 36 && cy <= yTop + 2) return b.measureIdx;
+  }
+  return -1;
+}
+
+// ── Resalte de la repetición/cambio de armadura seleccionado (clic en
+// la partitura) — mismo color que una nota seleccionada, para que se
+// entienda que Supr los va a borrar igual que a una nota. ──────────
+function drawMarkSelection(boxes, rowOffset) {
+  const selColor = cssVar('--note-selected') || '#5B6CFF';
+
+  if (state.selectedRepeatIdx >= 0) {
+    const rep = state.repeats[state.selectedRepeatIdx];
+    if (rep) {
+      const a = boxes[rep.from], b = boxes[rep.to];
+      if (a) {
+        const pr = a.row - rowOffset;
+        if (pr >= 0 && pr < RPP) {
+          ctx.save();
+          ctx.strokeStyle = selColor;
+          ctx.lineWidth   = 2;
+          ctx.strokeRect(a.x0 - 8, sY(pr, 0) - 6, 22, SS * 4 + 12);
+          ctx.restore();
+        }
+      }
+      if (b) {
+        const pr = b.row - rowOffset;
+        if (pr >= 0 && pr < RPP) {
+          ctx.save();
+          ctx.strokeStyle = selColor;
+          ctx.lineWidth   = 2;
+          ctx.strokeRect(b.x0 + b.w - 16, sY(pr, 0) - 6, 22, SS * 4 + 12);
+          ctx.restore();
+        }
+      }
+    }
+  }
+
+  if (state.selectedKeyChangeMeasure >= 0) {
+    const b = boxes.find(bb => bb.measureIdx === state.selectedKeyChangeMeasure);
+    if (b) {
+      const pr = b.row - rowOffset;
+      if (pr >= 0 && pr < RPP) {
+        ctx.save();
+        ctx.strokeStyle = selColor;
+        ctx.lineWidth   = 2;
+        ctx.strokeRect(b.x0 - 6, sY(pr, 0) - 36, 56, 38);
+        ctx.restore();
+      }
+    }
+  }
+}
+
 // ── Cabezal de reproducción ───────────────────────────────────
 function drawPlayhead(rowOffset) {
   if (!playhead) return;
@@ -1080,6 +1169,7 @@ export function render() {
   drawEmptyHint();
   drawRepeatSigns(boxes, rowOffset);
   drawRepeatGhost(boxes, rowOffset);
+  drawMarkSelection(boxes, rowOffset);
 
   const selSet = new Set(state.selection);
   if (state.selectedNote >= 0) selSet.add(state.selectedNote);
