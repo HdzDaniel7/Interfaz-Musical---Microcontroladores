@@ -249,13 +249,12 @@ function updateStatus() {
     `${measures.length} compás${measures.length !== 1 ? 'es' : ''}, tono ${tono}`);
 
   updateRepeatList(measures.length);
-  updateKeyChangeList(measures.length);
   updateToolbarAvailability();
 }
 
 // ── Cambios de armadura por compás ────────────────────────────
 function keyLabel(key) {
-  const opt = [...$('key-change-key').options].find(o => o.value === String(key));
+  const opt = [...$('key-tool-sel').options].find(o => o.value === String(key));
   return opt ? opt.textContent : String(key);
 }
 
@@ -276,38 +275,6 @@ function addKeyChange(measure1, key) {
   scheduleSave();
   showToast(`Tonalidad: ${keyLabel(key)} desde el compás ${mi + 1}`, { type: 'success' });
   return true;
-}
-
-let _keyChangeListSig = '';
-
-function updateKeyChangeList(measureCount) {
-  const sig = state.keyChanges.map(k => `${k.measure}:${k.key}`).join(',') + '|' + measureCount;
-  if (sig === _keyChangeListSig) return;
-  _keyChangeListSig = sig;
-
-  const list = $('key-change-list');
-  list.innerHTML = '';
-  state.keyChanges.forEach((kc, i) => {
-    const outOfRange = kc.measure >= measureCount;
-    const item = document.createElement('div');
-    item.className = 'repeat-item';
-    item.innerHTML =
-      `<span>Compás <strong>${kc.measure + 1}</strong> → <strong>${keyLabel(kc.key)}</strong>` +
-      `${outOfRange ? ' <em>(fuera de rango)</em>' : ''}</span>`;
-    const del = document.createElement('button');
-    del.className = 'repeat-del';
-    del.title = 'Quitar cambio de tonalidad';
-    del.textContent = '✕';
-    del.addEventListener('click', () => {
-      pushHistory();
-      state.keyChanges.splice(i, 1);
-      markCodeDirty();
-      render();
-      scheduleSave();
-    });
-    item.appendChild(del);
-    list.appendChild(item);
-  });
 }
 
 // ── Lista de repeticiones (solo se reconstruye si cambió) ─────
@@ -1280,15 +1247,6 @@ function bindRepeatPicker() {
   });
 }
 
-// ── Cambios de armadura (sección Tonalidad) ───────────────────
-function bindKeyChanges() {
-  $('key-change-add').addEventListener('click', () => {
-    const measure = parseInt($('key-change-measure').value, 10);
-    const key     = parseInt($('key-change-key').value, 10) || 0;
-    addKeyChange(measure, key);
-  });
-}
-
 // ── Herramienta "Armadura": modo activo, próximo clic en un compás
 // (2 o posterior) coloca ahí la armadura elegida en #key-tool-sel.
 // Excluyente con la inserción de notas y con "elegir repetición"
@@ -1769,7 +1727,6 @@ export function initUI() {
   bindKeyboard();
   bindSidebarResizer();
   bindZoom();
-  bindKeyChanges();
   bindKeyPicker();
   bindRepeatPanel();
   bindSettingsPopover();

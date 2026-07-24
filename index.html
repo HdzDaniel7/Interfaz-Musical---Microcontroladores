@@ -362,28 +362,13 @@
 
           <section class="prop-section">
             <h3 class="section-title">Tonalidad por compás</h3>
-            <p class="note-small" style="margin-bottom:8px">
-              La armadura del <strong>compás 1</strong> se elige con «Armadura» en la barra superior.
-              Acá podés cambiarla desde cualquier compás (los siguientes heredan la nueva
-              tonalidad hasta el próximo cambio), o con la herramienta 🎼 sobre la partitura.
+            <p class="note-small">
+              La armadura del <strong>compás 1</strong> se elige con «Armadura» en Ajustes ⚙.
+              Para cambiarla a mitad de pieza, usá la herramienta <strong>🎼 Armadura</strong> de
+              la barra: elegí la nueva tonalidad y hacé clic en el compás (2 o posterior) donde
+              empieza a regir. Para quitar un cambio ya puesto, hacé clic sobre su marca en la
+              partitura (los glifos ♯/♭ arriba del pentagrama) y presioná Supr.
             </p>
-            <div class="repeat-form">
-              <span class="field-label">Compás</span>
-              <input class="num-input rep-input" type="number" id="key-change-measure" min="2" value="2" title="Desde qué compás aplica">
-              <select class="sel-input" id="key-change-key" title="Nueva armadura">
-                <option value="0">Do M</option>
-                <option value="1">Sol M · 1♯</option>
-                <option value="2">Re M · 2♯</option>
-                <option value="3">La M · 3♯</option>
-                <option value="4">Mi M · 4♯</option>
-                <option value="-1">Fa M · 1♭</option>
-                <option value="-2">Si♭ M · 2♭</option>
-                <option value="-3">Mi♭ M · 3♭</option>
-                <option value="-4">La♭ M · 4♭</option>
-              </select>
-              <button class="copy-btn" id="key-change-add">Agregar</button>
-            </div>
-            <div id="key-change-list" class="repeat-list"></div>
           </section>
 
           <section class="prop-section">
